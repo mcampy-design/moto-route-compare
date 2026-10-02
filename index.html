@@ -11,7 +11,17 @@ html{scroll-padding-top:env(safe-area-inset-top,0)}*{margin:0;padding:0;box-sizi
 body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--text);line-height:1.55;-webkit-font-smoothing:antialiased}
 .shell{max-width:1200px;margin:0 auto;padding:0 16px}
 header{padding:28px 0 0}header h1{font-size:1.35rem;font-weight:700;letter-spacing:-0.03em}header p{color:var(--dim);font-size:0.82rem;margin-top:2px}
-.drop-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:20px 0}
+.drop-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:20px 0 8px}
+.slot{display:flex;flex-direction:column;gap:8px;min-width:0}
+.link-row{display:flex;gap:6px}
+.link-row input,.key-row input{flex:1;min-width:0;background:var(--s1);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:7px 10px;font:inherit;font-size:0.78rem}
+.link-row input:focus,.key-row input:focus{outline:none;border-color:var(--a)}
+.link-row button{background:var(--s1);border:1px solid var(--border);color:var(--text);padding:7px 14px;border-radius:6px;font:inherit;font-size:0.78rem;font-weight:500;cursor:pointer}
+.link-row button:hover{border-color:var(--a);color:var(--a)}
+.link-row button:disabled{opacity:.5;cursor:wait}
+.key-row{display:flex;align-items:center;gap:8px;margin-bottom:20px;font-size:0.72rem;color:var(--dim);flex-wrap:wrap}
+.key-row input{flex:0 1 320px}
+.slot-error{font-size:0.72rem;color:var(--hot)}
 @media(max-width:600px){.drop-row{grid-template-columns:1fr}}
 .drop-zone{border:2px dashed var(--border);border-radius:var(--radius);padding:28px 16px;text-align:center;cursor:pointer;transition:.2s}
 .drop-zone:hover,.drop-zone.drag-over{border-color:var(--a);background:#5b8af508}
@@ -50,7 +60,7 @@ footer{text-align:center;padding:16px 0 32px;font-size:0.7rem;color:var(--dim2)}
   @page{size:letter landscape;margin:0.5in}
   body{background:#fff!important;color:#111!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
   .shell{max-width:100%;padding:0}header h1{color:#111}header p{color:#555}
-  .drop-row,.export-bar,footer,.source-note{display:none!important}#results{display:block!important}
+  .drop-row,.key-row,.export-bar,footer,.source-note{display:none!important}#results{display:block!important}
   .cards{grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:8px}
   .card{background:#f5f6f8!important;border-color:#ddd!important;padding:10px;break-inside:avoid}.card .k{color:#666}
   .card .v.a{color:#2563eb}.card .v.b{color:#c2410c}.card .sub{color:#888}
@@ -69,15 +79,28 @@ footer{text-align:center;padding:16px 0 32px;font-size:0.7rem;color:var(--dim2)}
 <div class="shell">
 <header>
   <h1>GPX Route Comparison</h1>
-  <p>Drop two GPX files to compare curviness and road emptiness</p>
+  <p>Drop two GPX files, or paste Google Maps directions links, to compare curviness, emptiness, and tree cover</p>
 </header>
 <div class="drop-row">
-  <div class="drop-zone a" id="dropA" onclick="document.getElementById('fileA').click()">
-    <input type="file" id="fileA" accept=".gpx"><div class="label"><strong>Route A</strong> — drop GPX or click</div><div class="filename" id="nameA"></div>
+  <div class="slot">
+    <div class="drop-zone a" id="dropA" onclick="document.getElementById('fileA').click()">
+      <input type="file" id="fileA" accept=".gpx"><div class="label"><strong>Route A</strong> — drop GPX or click</div><div class="filename" id="nameA"></div>
+    </div>
+    <div class="link-row"><input type="url" id="linkA" placeholder="…or paste a Google Maps directions link"><button id="btnA" onclick="loadGoogle('a')">Load</button></div>
+    <div class="slot-error" id="errA"></div>
   </div>
-  <div class="drop-zone b" id="dropB" onclick="document.getElementById('fileB').click()">
-    <input type="file" id="fileB" accept=".gpx"><div class="label"><strong>Route B</strong> — drop GPX or click</div><div class="filename" id="nameB"></div>
+  <div class="slot">
+    <div class="drop-zone b" id="dropB" onclick="document.getElementById('fileB').click()">
+      <input type="file" id="fileB" accept=".gpx"><div class="label"><strong>Route B</strong> — drop GPX or click</div><div class="filename" id="nameB"></div>
+    </div>
+    <div class="link-row"><input type="url" id="linkB" placeholder="…or paste a Google Maps directions link"><button id="btnB" onclick="loadGoogle('b')">Load</button></div>
+    <div class="slot-error" id="errB"></div>
   </div>
+</div>
+<div class="key-row" id="keyRow">
+  <span>Google Maps API key (only needed for links):</span>
+  <input type="password" id="gkey" placeholder="paste key" autocomplete="off">
+  <span>saved in this browser only</span>
 </div>
 <div id="results">
   <div class="export-bar" id="exportBar"><button class="export-btn" id="exportBtn" disabled>Export PDF</button></div>
@@ -221,17 +244,114 @@ function setupDrop(zoneId,fileId,slot){
 }
 setupDrop('dropA','fileA','a'); setupDrop('dropB','fileB','b');
 
+function ingest(pts,label,slot){
+  const S=slot.toUpperCase();
+  document.getElementById('err'+S).textContent='';
+  if(!pts||pts.length<10){document.getElementById('err'+S).textContent='Could not read a route — found '+(pts?pts.length:0)+' points.';return}
+  const analysis=analyze(pts); analysis.filename=label;
+  if(slot==='a')routeA=analysis; else routeB=analysis;
+  document.getElementById('name'+S).textContent=label+' ('+pts.length+' pts)';
+  document.getElementById('drop'+S).classList.add('loaded');
+  if(routeA&&routeB)render();
+}
+
 function loadFile(file,slot){
   const reader=new FileReader();
-  reader.onload=e=>{
-    const pts=parseGPX(e.target.result);
-    if(!pts||pts.length<10){alert('Could not parse GPX — found '+(pts?pts.length:0)+' points.');return}
-    const analysis=analyze(pts); analysis.filename=file.name;
-    if(slot==='a'){routeA=analysis;document.getElementById('nameA').textContent=file.name+' ('+pts.length+' pts)';document.getElementById('dropA').classList.add('loaded')}
-    else{routeB=analysis;document.getElementById('nameB').textContent=file.name+' ('+pts.length+' pts)';document.getElementById('dropB').classList.add('loaded')}
-    if(routeA&&routeB)render();
-  };
+  reader.onload=e=>ingest(parseGPX(e.target.result),file.name,slot);
   reader.readAsText(file);
+}
+
+// ══════════════════════════════════════════════════════════════
+// GOOGLE MAPS LINKS
+// A directions link holds only the stops, so we re-route them with
+// Google's Routes API to get the road geometry. Optional: paste a key
+// restricted to this site's URL into GOOGLE_MAPS_KEY so visitors
+// don't need their own.
+// ══════════════════════════════════════════════════════════════
+const GOOGLE_MAPS_KEY='';
+const keyInput=document.getElementById('gkey');
+try{keyInput.value=localStorage.getItem('gmapsKey')||''}catch(e){}
+keyInput.addEventListener('change',()=>{try{localStorage.setItem('gmapsKey',keyInput.value.trim())}catch(e){}});
+if(GOOGLE_MAPS_KEY)document.getElementById('keyRow').style.display='none';
+function getKey(){return GOOGLE_MAPS_KEY||keyInput.value.trim()}
+
+function parseGoogleUrl(raw){
+  let url;
+  try{url=new URL(raw.trim())}catch(e){throw new Error("That doesn't look like a link.")}
+  if(/goo\.gl$/.test(url.hostname))
+    throw new Error('Short links (maps.app.goo.gl) can\'t be opened from here. Open the link in your browser, copy the full address from the address bar, and paste that.');
+  const m=url.pathname.match(/\/maps\/dir\/(.*)$/);
+  if(!m)throw new Error("This isn't a Google Maps directions link — it should contain /maps/dir/.");
+  const segs=m[1].split('/');
+  if(segs[0]==='')throw new Error('This route starts at "Your location". Set a real starting address in Google Maps, then copy the link again.');
+  const stops=[];
+  for(const seg of segs){
+    if(seg.startsWith('@')||seg.startsWith('data='))break;
+    const t=decodeURIComponent(seg.replace(/\+/g,' ')).trim();
+    if(t)stops.push(t);
+  }
+  if(stops.length<2)throw new Error('Need at least a start and an end in the link.');
+  const dm=raw.match(/data=([^?&#]*)/),data=dm?dm[1]:'';
+  const am=data.match(/!2m\d+((?:!\db[01])+)/),flags=am?am[1]:'';
+  return{stops,avoidHighways:/!1b1/.test(flags),avoidTolls:/!2b1/.test(flags),avoidFerries:/!3b1/.test(flags)};
+}
+
+function toWaypoint(s){
+  const c=s.match(/^(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)$/);
+  return c?{location:{latLng:{latitude:+c[1],longitude:+c[2]}}}:{address:s};
+}
+
+function decodePolyline(str){
+  const pts=[];let i=0,lat=0,lng=0;
+  while(i<str.length){
+    for(const k of [0,1]){
+      let b,shift=0,result=0;
+      do{b=str.charCodeAt(i++)-63;result|=(b&0x1f)<<shift;shift+=5}while(b>=0x20);
+      const d=(result&1)?~(result>>1):(result>>1);
+      if(k===0)lat+=d;else lng+=d;
+    }
+    pts.push([lat/1e5,lng/1e5]);
+  }
+  return pts;
+}
+
+async function fetchGoogleRoute(p,key){
+  const body={
+    origin:toWaypoint(p.stops[0]),
+    destination:toWaypoint(p.stops[p.stops.length-1]),
+    intermediates:p.stops.slice(1,-1).map(toWaypoint),
+    travelMode:'DRIVE',
+    polylineQuality:'HIGH_QUALITY',
+    routeModifiers:{avoidHighways:p.avoidHighways,avoidTolls:p.avoidTolls,avoidFerries:p.avoidFerries}
+  };
+  const res=await fetch('https://routes.googleapis.com/directions/v2:computeRoutes',{
+    method:'POST',
+    headers:{'Content-Type':'application/json','X-Goog-Api-Key':key,'X-Goog-FieldMask':'routes.polyline.encodedPolyline,routes.distanceMeters'},
+    body:JSON.stringify(body)
+  });
+  const j=await res.json().catch(()=>({}));
+  if(!res.ok)throw new Error('Google: '+((j.error&&j.error.message)||('request failed ('+res.status+')')));
+  if(!j.routes||!j.routes.length)throw new Error('Google found no route for those stops.');
+  return decodePolyline(j.routes[0].polyline.encodedPolyline);
+}
+
+async function loadGoogle(slot){
+  const S=slot.toUpperCase(),err=document.getElementById('err'+S),btn=document.getElementById('btn'+S);
+  err.textContent='';
+  const raw=document.getElementById('link'+S).value;
+  if(!raw.trim()){err.textContent='Paste a Google Maps directions link first.';return}
+  const key=getKey();
+  if(!key){err.textContent='Add a Google Maps API key below to load links.';return}
+  btn.disabled=true;btn.textContent='Routing…';
+  try{
+    const p=parseGoogleUrl(raw);
+    const pts=await fetchGoogleRoute(p,key);
+    const short=s=>s.split(',')[0].trim();
+    const label='Google — '+short(p.stops[0])+' to '+short(p.stops[p.stops.length-1])+(p.avoidHighways?' (no hwys)':'');
+    ingest(pts,label,slot);
+  }catch(e){
+    err.textContent=(e instanceof TypeError)?'Could not reach Google — check your connection, or that the key allows this site.':e.message;
+  }finally{btn.disabled=false;btn.textContent='Load'}
 }
 
 function parseGPX(xml){
