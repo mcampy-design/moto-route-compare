@@ -38,20 +38,22 @@ h1{font-size:clamp(2rem,4.2vw,3rem);font-weight:650;letter-spacing:-0.035em;line
 .lede{margin-top:12px;color:var(--muted);max-width:56ch;font-size:1.02rem}
 
 /* Inputs */
-.routes{display:grid;grid-template-columns:1fr;gap:16px}
-@media(min-width:768px){.routes{grid-template-columns:1fr 1fr}}
-.route{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:20px;display:grid;gap:16px;min-width:0}
+.routes{display:grid;grid-template-columns:minmax(0,1fr);gap:16px}
+@media(min-width:768px){.routes{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.route{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:20px;display:grid;grid-template-columns:minmax(0,1fr);gap:16px;min-width:0}
 .route h2{font-size:1rem;font-weight:600;display:flex;align-items:center;gap:10px}
 .key{width:22px;height:4px;border-radius:2px;flex:none}
 .key.a{background:var(--a)}.key.b{background:var(--b)}
 .drop{border:1.5px dashed var(--line);border-radius:var(--r);padding:18px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;transition:border-color .2s var(--ease),background-color .2s var(--ease)}
 .drop.over{border-color:var(--text)}
+.drop .status{flex:1 1 12rem;min-width:0}
 .drop p{color:var(--muted);font-size:.9rem}
-.drop .loaded{color:var(--text);font-weight:550;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
-.drop .loaded .num{color:var(--muted);font-weight:400;margin-left:6px}
+.drop .loaded{color:var(--text);font-weight:550;display:flex;align-items:baseline;min-width:0;max-width:100%}
+.drop .loaded .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.drop .loaded .num{color:var(--muted);font-weight:400;margin-left:6px;flex:none}
 .route.has-a .drop{border-style:solid;border-color:var(--a)}
 .route.has-b .drop{border-style:solid;border-color:var(--b)}
-.field{display:grid;gap:6px}
+.field{display:grid;grid-template-columns:minmax(0,1fr);gap:6px}
 .field label{font-size:.85rem;font-weight:550}
 .field .row{display:flex;gap:8px}
 .field input{flex:1;min-width:0;background:var(--bg);border:1px solid var(--line);border-radius:var(--r);padding:9px 12px;font-size:.9rem}
@@ -62,7 +64,7 @@ h1{font-size:clamp(2rem,4.2vw,3rem);font-weight:650;letter-spacing:-0.035em;line
 .error{font-size:.82rem;color:var(--err);min-height:0}
 .error:empty{display:none}
 .btn{border:1px solid var(--line);background:var(--surface);border-radius:var(--r);padding:9px 14px;font-size:.88rem;font-weight:550;cursor:pointer;white-space:nowrap;transition:transform .12s var(--ease),border-color .2s var(--ease)}
-.btn:hover{border-color:var(--text)}
+@media(hover:hover){.btn:hover{border-color:var(--text)}}
 .btn:active{transform:scale(.98)}
 .btn.primary{background:var(--btn-bg);color:var(--btn-fg);border-color:var(--btn-bg)}
 .btn:disabled{opacity:.55;cursor:default;transform:none}
@@ -76,9 +78,9 @@ h1{font-size:clamp(2rem,4.2vw,3rem);font-weight:650;letter-spacing:-0.035em;line
 .empty strong{display:block;color:var(--text);font-weight:600;margin-bottom:4px}
 .res-head{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:20px}
 .res-head h2{font-size:1.5rem;font-weight:650;letter-spacing:-0.02em}
-.scores{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.scores{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
 .score{padding:4px 0}
-.score .name{font-size:.9rem;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.score .name{font-size:.9rem;color:var(--muted);overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow-wrap:anywhere}
 .score .big{font-family:var(--mono);font-size:clamp(3rem,8vw,4.5rem);font-weight:500;line-height:1.05;letter-spacing:-0.04em}
 .score.a .big{color:var(--a)}.score.b .big{color:var(--b)}
 .score .unit{font-size:.85rem;color:var(--muted)}
@@ -88,8 +90,8 @@ h1{font-size:clamp(2rem,4.2vw,3rem);font-weight:650;letter-spacing:-0.035em;line
 .panel h3{font-size:.95rem;font-weight:600;margin-bottom:10px}
 .chart{width:100%;height:170px;display:block}
 .overall{margin-top:24px}
-.groups{display:grid;grid-template-columns:1fr;gap:16px;margin-top:16px}
-@media(min-width:900px){.groups{grid-template-columns:repeat(3,1fr)}}
+.groups{display:grid;grid-template-columns:minmax(0,1fr);gap:16px;margin-top:16px}
+@media(min-width:900px){.groups{grid-template-columns:repeat(3,minmax(0,1fr))}}
 .metrics{display:grid;grid-template-columns:1fr auto auto;column-gap:16px;font-size:.88rem;margin-bottom:14px}
 .metrics .h{font-size:.78rem;color:var(--muted);padding-bottom:6px;display:flex;align-items:center;gap:6px;justify-content:flex-end}
 .metrics .h:first-child{justify-content:flex-start}
@@ -99,15 +101,41 @@ h1{font-size:clamp(2rem,4.2vw,3rem);font-weight:650;letter-spacing:-0.035em;line
 .note{font-size:.78rem;color:var(--muted);margin-top:8px}
 details{margin-top:16px}
 summary{cursor:pointer;font-weight:600;font-size:.95rem;padding:10px 0}
-.table-wrap{max-height:420px;overflow:auto;border:1px solid var(--line);border-radius:var(--r)}
+.table-wrap{max-height:min(420px,65vh);overflow:auto;border:1px solid var(--line);border-radius:var(--r);overscroll-behavior:contain}
 table{width:100%;border-collapse:collapse;font-size:.8rem}
-th{position:sticky;top:0;background:var(--surface);text-align:right;font-weight:550;color:var(--muted);padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+thead{position:sticky;top:0;z-index:2}
+th{background:var(--surface);text-align:right;font-weight:550;color:var(--muted);padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
 td{text-align:right;padding:5px 10px;border-bottom:1px solid var(--grid);font-family:var(--mono);font-variant-numeric:tabular-nums}
-th:first-child,td:first-child{text-align:left}
+th[rowspan],td:first-child{text-align:left;position:sticky;left:0;background:var(--surface)}
+th[rowspan]{z-index:1;vertical-align:bottom}
+th.grp{text-align:center;color:var(--text);border-bottom-color:var(--grid)}
+th.grp .key{display:inline-block;vertical-align:middle;margin-right:6px}
 footer{padding:24px 0 48px;color:var(--muted);font-size:.82rem;max-width:70ch}
 @media (prefers-reduced-motion:no-preference){.reveal{animation:rise .35s var(--ease) both}}
 @keyframes rise{from{opacity:0;transform:translateY(6px)}}
 @media(max-width:767px){header{padding-top:36px}.res-head{flex-wrap:wrap}}
+/* Phones */
+@media(max-width:480px){
+  .wrap{padding:0 16px}
+  header{padding:28px 0 20px}
+  .route{padding:16px;gap:14px}
+  .drop{padding:14px}
+  .panel{padding:14px}
+  .metrics{column-gap:12px;font-size:.84rem}
+  .help,.error,.note,.weights{font-size:.875rem}
+  table{font-size:.84rem}
+  th,td{padding-left:5px;padding-right:5px}
+  /* No scroll box inside the page: the table scrolls sideways only, the page scrolls down */
+  .table-wrap{max-height:none;overscroll-behavior:auto}
+}
+/* Touch: no drag and drop, bigger targets, 16px inputs so iOS doesn't zoom on focus */
+button,summary,.drop{touch-action:manipulation}
+@media(pointer:coarse){
+  .btn{min-height:44px;padding:10px 16px}
+  .field input{font-size:16px;min-height:44px}
+  .drop{cursor:pointer}
+  summary{padding:12px 0}
+}
 </style>
 </head>
 <body>
@@ -128,7 +156,7 @@ footer{padding:24px 0 48px;color:var(--muted);font-size:.82rem;max-width:70ch}
     </div>
     <div class="field">
       <label for="linkA">Or paste a Google Maps directions link</label>
-      <div class="row"><input type="url" id="linkA" inputmode="url" autocomplete="off" placeholder="https://maps.app.goo.gl/..."><button class="btn primary" type="button" id="btnA" onclick="loadGoogle('a')">Load route</button></div>
+      <div class="row"><input type="url" id="linkA" inputmode="url" enterkeyhint="go" autocomplete="off" placeholder="https://maps.app.goo.gl/..."><button class="btn primary" type="button" id="btnA" onclick="loadGoogle('a')">Load route</button></div>
       <p class="help" id="helpA">Short or full links both work.</p>
       <p class="error" id="errA" role="alert"></p>
     </div>
@@ -142,7 +170,7 @@ footer{padding:24px 0 48px;color:var(--muted);font-size:.82rem;max-width:70ch}
     </div>
     <div class="field">
       <label for="linkB">Or paste a Google Maps directions link</label>
-      <div class="row"><input type="url" id="linkB" inputmode="url" autocomplete="off" placeholder="https://maps.app.goo.gl/..."><button class="btn primary" type="button" id="btnB" onclick="loadGoogle('b')">Load route</button></div>
+      <div class="row"><input type="url" id="linkB" inputmode="url" enterkeyhint="go" autocomplete="off" placeholder="https://maps.app.goo.gl/..."><button class="btn primary" type="button" id="btnB" onclick="loadGoogle('b')">Load route</button></div>
       <p class="help" id="helpB">Short or full links both work.</p>
       <p class="error" id="errB" role="alert"></p>
     </div>
@@ -333,8 +361,16 @@ const css=name=>getComputedStyle(document.documentElement).getPropertyValue(name
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
 // ── Inputs ──
+// Phones and tablets can't drag files in, and iOS greys out .gpx files
+// when the picker is filtered by extension, so drop the filter there.
+const touch=matchMedia('(pointer:coarse)').matches;
+const EMPTY_STATUS='<p>'+(touch?'No GPX file chosen':'Drop a GPX file here')+'</p>';
 function setupDrop(slot){
   const S=slot.toUpperCase(),zone=$('drop'+S),input=$('file'+S);
+  if(touch){
+    input.removeAttribute('accept');setStatus(slot,EMPTY_STATUS);
+    zone.addEventListener('click',e=>{if(!e.target.closest('button'))input.click()});
+  }
   ['dragenter','dragover'].forEach(e=>zone.addEventListener(e,ev=>{ev.preventDefault();zone.classList.add('over')}));
   ['dragleave','drop'].forEach(e=>zone.addEventListener(e,()=>zone.classList.remove('over')));
   zone.addEventListener('drop',ev=>{ev.preventDefault();if(ev.dataTransfer.files[0])loadFile(ev.dataTransfer.files[0],slot)});
@@ -355,10 +391,10 @@ function setStatus(slot,html){$('status'+slot.toUpperCase()).innerHTML=html}
 function ingest(pts,label,slot){
   const S=slot.toUpperCase();
   $('err'+S).textContent='';
-  if(!pts||pts.length<10){$('err'+S).textContent='Could not read a route from that. Found '+(pts?pts.length:0)+' points.';setStatus(slot,'<p>Drop a GPX file here</p>');return}
+  if(!pts||pts.length<10){$('err'+S).textContent='Could not read a route from that. Found '+(pts?pts.length:0)+' points.';setStatus(slot,EMPTY_STATUS);return}
   const analysis=analyze(pts);analysis.filename=label;
   if(slot==='a')routeA=analysis;else routeB=analysis;
-  setStatus(slot,`<p class="loaded" title="${esc(label)}">${esc(label)}<span class="num">${Math.round(analysis.totalDist)} mi</span></p>`);
+  setStatus(slot,`<p class="loaded" title="${esc(label)}"><span class="nm">${esc(label)}</span><span class="num">${Math.round(analysis.totalDist)} mi</span></p>`);
   $('route'+S).classList.add('has-'+slot);
   if(routeA&&routeB)render();
 }
@@ -472,16 +508,17 @@ function drawProfile(id,aData,bData,maxVal,unit,thresh){
   const ctx=canvas.getContext('2d'),dpr=window.devicePixelRatio||1;
   const W=canvas.clientWidth,H=canvas.clientHeight;
   canvas.width=W*dpr;canvas.height=H*dpr;ctx.setTransform(dpr,0,0,dpr,0,0);
-  const pad={t:8,r:6,b:22,l:34},cW=W-pad.l-pad.r,cH=H-pad.t-pad.b;
+  const fs=W<480?12:11,pad={t:8,r:6,b:fs+14,l:fs*3.6},cW=W-pad.l-pad.r,cH=H-pad.t-pad.b;
   ctx.clearRect(0,0,W,H);
   const maxMile=Math.max(aData[aData.length-1].mile,bData[bData.length-1].mile)||1;
   const x=m=>pad.l+(m/maxMile)*cW,y=v=>pad.t+cH-(Math.min(v,maxVal)/maxVal)*cH;
   const muted=css('--muted'),grid=css('--grid');
-  ctx.font='10px '+css('--mono');ctx.lineWidth=1;
+  ctx.font=fs+'px '+css('--mono');ctx.lineWidth=1;
   for(let i=0;i<=4;i++){const v=maxVal*i/4;ctx.strokeStyle=grid;ctx.beginPath();ctx.moveTo(pad.l,y(v));ctx.lineTo(pad.l+cW,y(v));ctx.stroke();
-    ctx.fillStyle=muted;ctx.textAlign='right';ctx.fillText(Math.round(v)+unit,pad.l-6,y(v)+3)}
-  const step=maxMile>200?100:50;
-  ctx.textAlign='center';for(let m=0;m<=maxMile;m+=step)ctx.fillText(m+' mi',Math.min(x(m),W-18),H-6);
+    ctx.fillStyle=muted;ctx.textAlign='right';ctx.fillText(Math.round(v)+unit,pad.l-6,y(v)+fs*0.35)}
+  // Aim for about 3-5 mile labels whatever the route length
+  const step=[10,25,50,100,200,500].find(s=>maxMile/s<=4)||1000;
+  ctx.textAlign='center';for(let m=0;m<=maxMile;m+=step){const t=m+' mi',hw=ctx.measureText(t).width/2;ctx.fillText(t,Math.min(Math.max(x(m),hw),W-hw),H-5)}
   if(thresh!=null){ctx.strokeStyle=muted;ctx.setLineDash([3,4]);ctx.beginPath();ctx.moveTo(pad.l,y(thresh));ctx.lineTo(pad.l+cW,y(thresh));ctx.stroke();ctx.setLineDash([])}
   const line=(d,c)=>{ctx.strokeStyle=c;ctx.lineWidth=1.75;ctx.lineJoin='round';ctx.beginPath();d.forEach((p,i)=>i?ctx.lineTo(x(p.mile),y(p.avg)):ctx.moveTo(x(p.mile),y(p.avg)));ctx.stroke()};
   line(bData,css('--b'));line(aData,css('--a'));
@@ -498,14 +535,16 @@ function renderCharts(){
 function renderTable(){
   const n=Math.max(routeA.milesData.length,routeB.milesData.length);
   const aM={},bM={};routeA.milesData.forEach(d=>aM[d.mile]=d);routeB.milesData.forEach(d=>bM[d.mile]=d);
-  let h='<table><thead><tr><th>Mile</th><th>A curves</th><th>A empty</th><th>A trees</th><th>B curves</th><th>B empty</th><th>B trees</th></tr></thead><tbody>';
+  let h='<table><thead><tr><th rowspan="2">Mile</th><th class="grp" colspan="3"><span class="key a"></span>A</th><th class="grp" colspan="3"><span class="key b"></span>B</th></tr>'
+    +'<tr><th>Curves</th><th>Empty</th><th>Trees</th><th>Curves</th><th>Empty</th><th>Trees</th></tr></thead><tbody>';
   const c=(d,f)=>d?f(d):'';
   for(let m=0;m<n;m++){const a=aM[m],b=bM[m];
     h+=`<tr><td>${m}</td><td>${c(a,d=>d.avg+'°')}</td><td>${c(a,d=>d.emptiness)}</td><td>${c(a,d=>d.canopyPct+'%')}</td><td>${c(b,d=>d.avg+'°')}</td><td>${c(b,d=>d.emptiness)}</td><td>${c(b,d=>d.canopyPct+'%')}</td></tr>`}
   $('tableWrap').innerHTML=h+'</tbody></table>';
 }
 
-let rt;window.addEventListener('resize',()=>{clearTimeout(rt);rt=setTimeout(renderCharts,120)});
+// Only redraw on width changes: mobile browser toolbars showing/hiding fire height-only resizes
+let rt,lastW=innerWidth;window.addEventListener('resize',()=>{if(innerWidth===lastW)return;lastW=innerWidth;clearTimeout(rt);rt=setTimeout(renderCharts,120)});
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change',renderCharts);
 
 // ── Report download ──
