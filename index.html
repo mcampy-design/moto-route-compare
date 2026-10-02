@@ -271,7 +271,8 @@ function loadFile(file,slot){
 const GOOGLE_MAPS_KEY='';
 const keyInput=document.getElementById('gkey');
 try{keyInput.value=localStorage.getItem('gmapsKey')||''}catch(e){}
-keyInput.addEventListener('change',()=>{try{localStorage.setItem('gmapsKey',keyInput.value.trim())}catch(e){}});
+function saveKey(){try{localStorage.setItem('gmapsKey',keyInput.value.trim())}catch(e){}}
+keyInput.addEventListener('input',saveKey);keyInput.addEventListener('change',saveKey);
 if(GOOGLE_MAPS_KEY)document.getElementById('keyRow').style.display='none';
 function getKey(){return GOOGLE_MAPS_KEY||keyInput.value.trim()}
 
@@ -342,6 +343,7 @@ async function loadGoogle(slot){
   if(!raw.trim()){err.textContent='Paste a Google Maps directions link first.';return}
   const key=getKey();
   if(!key){err.textContent='Add a Google Maps API key below to load links.';return}
+  if(!GOOGLE_MAPS_KEY)saveKey();
   btn.disabled=true;btn.textContent='Routing…';
   try{
     const p=parseGoogleUrl(raw);
