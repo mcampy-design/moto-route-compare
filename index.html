@@ -4,9 +4,18 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
-<meta name="theme-color" content="#f3f4f6" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#111317" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#fbfbfc" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#171a20" media="(prefers-color-scheme: dark)">
 <title>Route Comparison</title>
+<meta property="og:type" content="website">
+<meta property="og:title" content="Route Compare">
+<meta property="og:description" content="Compare two routes for curves, empty roads, and tree cover.">
+<meta property="og:image" content="https://mcampy-design.github.io/moto-route-compare/images/og-image.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<!-- Apply a saved light/dark choice before first paint -->
+<script>try{const t=localStorage.getItem('theme');if(t==='light'||t==='dark')document.documentElement.dataset.theme=t}catch(e){}</script>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon-192.png" type="image/png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -22,15 +31,24 @@
   --bg:#f3f4f6; --surface:#fbfbfc; --line:#dcdfe5; --ctl:#858b97; --text:#15171c; --muted:#555b69;
   --a:#c8281e; --b:#2f5a8a; --err:#931a2e; --grid:#e3e6eb;
   --btn-bg:#15171c; --btn-fg:#f3f4f6;
+  --photo:grayscale(1); color-scheme:light;
   --r:8px; --ease:cubic-bezier(.16,1,.3,1);
   --sans:'Geist',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif;
   --mono:'Geist Mono',ui-monospace,'SF Mono',Menlo,monospace;
 }
-@media (prefers-color-scheme:dark){:root{
+/* Dark: the system setting unless the switch chose light, or the switch chose dark. Photo dimmed so it doesn't glare. */
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
   --bg:#111317; --surface:#171a20; --line:#2b303b; --ctl:#636a79; --text:#e9ebf0; --muted:#a0a7b6;
   --a:#ff7a6e; --b:#8fb4e0; --err:#ff8fa3; --grid:#232833;
   --btn-bg:#e9ebf0; --btn-fg:#111317;
+  --photo:grayscale(1) brightness(.75); color-scheme:dark;
 }}
+:root[data-theme="dark"]{
+  --bg:#111317; --surface:#171a20; --line:#2b303b; --ctl:#636a79; --text:#e9ebf0; --muted:#a0a7b6;
+  --a:#ff7a6e; --b:#8fb4e0; --err:#ff8fa3; --grid:#232833;
+  --btn-bg:#e9ebf0; --btn-fg:#111317;
+  --photo:grayscale(1) brightness(.75); color-scheme:dark;
+}
 *{margin:0;padding:0;box-sizing:border-box}
 [hidden]{display:none!important}
 html{-webkit-text-size-adjust:100%}
@@ -41,25 +59,26 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);line-height:
 button,input{font:inherit;color:inherit}
 :focus-visible{outline:2px solid var(--text);outline-offset:2px}
 
-header{padding:56px 0 28px}
-h1{font-size:clamp(2rem,4.2vw,3rem);font-weight:650;letter-spacing:-0.035em;line-height:1.05}
+/* Masthead: logo bar, then the photo band with the A/B rule, then the title */
+.bar{background:var(--surface);border-bottom:1px solid var(--line)}
+.bar .wrap{height:60px;display:flex;align-items:center;justify-content:space-between;gap:16px}
+.logo{display:flex;align-items:center;gap:10px;font-weight:650;font-size:1.05rem;letter-spacing:-0.025em;white-space:nowrap}
+.logo svg{width:28px;height:28px;flex:none}
+.logo .ra{stroke:var(--a)}.logo .rb{stroke:var(--b)}
+/* Light/dark switch: the whole label is the tap target */
+.theme{display:flex;align-items:center;gap:10px;min-height:44px;padding:0 2px;border:0;background:none;font-size:.88rem;font-weight:550;color:var(--muted);cursor:pointer}
+.theme .track{width:40px;height:24px;border-radius:12px;border:1px solid var(--ctl);background:var(--bg);position:relative;flex:none;transition:background-color .2s var(--ease),border-color .2s var(--ease)}
+.theme .knob{position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:var(--ctl);transition:transform .2s var(--ease),background-color .2s var(--ease)}
+.theme[aria-checked="true"] .track{background:var(--btn-bg);border-color:var(--btn-bg)}
+.theme[aria-checked="true"] .knob{transform:translateX(16px);background:var(--btn-fg)}
+@media (prefers-reduced-motion:reduce){.theme .track,.theme .knob{transition:none}}
+header{padding:24px 0 28px}
+.band{border-radius:var(--r);overflow:hidden}
+.band img{display:block;width:100%;height:auto;aspect-ratio:4/1;object-fit:cover;object-position:50% 28%;filter:var(--photo)}
+.band .rule{height:4px;background:linear-gradient(90deg,var(--a) 50%,var(--b) 50%)}
+@media(max-width:767px){.band img{aspect-ratio:2.4/1;object-position:62% 22%}}
+h1{margin-top:24px;font-size:clamp(2rem,4.2vw,3rem);font-weight:650;letter-spacing:-0.035em;line-height:1.05}
 .lede{margin-top:12px;color:var(--muted);max-width:56ch;font-size:1.02rem}
-/* Header photo: black and white, dimmed slightly in dark mode so it doesn't glare */
-.hero,.hero img{display:block}
-.hero img{width:100%;height:auto;filter:grayscale(1)}
-@media (prefers-color-scheme:dark){.hero img{filter:grayscale(1) brightness(.75)}}
-/* Wide: text left, photo right at its natural shape */
-@media(min-width:900px){
-  header{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,6fr);grid-template-areas:"intro hero";column-gap:48px;align-items:center}
-  .intro{grid-area:intro}.hero{grid-area:hero}
-  .hero img{border-radius:var(--r)}
-}
-/* Narrow: edge-to-edge 2:1 strip above the title, cropped to keep rider and bike in frame */
-@media(max-width:899px){
-  header{padding-top:0}
-  .hero{margin:0 -20px 24px}
-  .hero img{aspect-ratio:2/1;object-fit:cover;object-position:62% 50%}
-}
 
 /* Inputs */
 .routes{display:grid;grid-template-columns:minmax(0,1fr);gap:16px}
@@ -146,8 +165,8 @@ footer{padding:24px 0 48px;color:var(--muted);font-size:.82rem;max-width:70ch}
 /* Phones */
 @media(max-width:480px){
   .wrap{padding:0 16px}
-  header{padding-bottom:20px}
-  .hero{margin:0 -16px 20px}
+  header{padding:16px 0 20px}
+  h1{margin-top:20px}
   .route{padding:16px;gap:14px}
   .drop{padding:14px}
   .panel{padding:14px}
@@ -169,13 +188,20 @@ button,summary,.drop{touch-action:manipulation}
 </style>
 </head>
 <body>
+<div class="bar"><div class="wrap">
+  <div class="logo"><svg viewBox="98 98 316 316" aria-hidden="true"><path class="ra" d="M128 384 C128 300 212 332 206 262 S272 238 262 186 S322 128 384 128" fill="none" stroke-width="30" stroke-linecap="round" stroke-linejoin="round"/><path class="rb" d="M128 384 C250 384 370 330 384 128" fill="none" stroke-width="30" stroke-linecap="round"/><circle cx="128" cy="384" r="30" fill="currentColor"/><circle cx="384" cy="128" r="30" fill="currentColor"/></svg>Route Compare</div>
+  <button class="theme" type="button" role="switch" id="themeBtn" aria-checked="false">Dark mode<span class="track" aria-hidden="true"><span class="knob"></span></span></button>
+</div></div>
 <div class="wrap">
 <header>
-  <picture class="hero">
-    <source srcset="images/hero-1024.webp 1024w, images/hero-1536.webp 1536w, images/hero-2048.webp 2048w" sizes="(min-width: 900px) 560px, 100vw" type="image/webp">
-    <img src="images/hero-1024.jpg" width="1024" height="559" fetchpriority="high" decoding="async" alt="Rider in a leather jacket on a black Honda VFR, parked beside an empty highway through high desert.">
-  </picture>
-  <div class="intro">
+  <div class="band">
+    <picture>
+      <source srcset="images/hero-1024.webp 1024w, images/hero-1536.webp 1536w, images/hero-2048.webp 2048w" sizes="(min-width: 1160px) 1080px, calc(100vw - 40px)" type="image/webp">
+      <img src="images/hero-1024.jpg" width="1024" height="559" fetchpriority="high" decoding="async" alt="Rider in a leather jacket on a black Honda VFR, parked beside an empty highway through high desert.">
+    </picture>
+    <div class="rule" aria-hidden="true"></div>
+  </div>
+  <div>
     <h1>Route comparison</h1>
     <p class="lede">Compare two motorcycle routes for curves, empty roads, and tree cover. Use a GPX file or a Google Maps link.</p>
     <p class="error share-err" id="shareErr" role="alert"></p>
@@ -690,7 +716,22 @@ function renderTable(){
 
 // Only redraw on width changes: mobile browser toolbars showing/hiding fire height-only resizes
 let rt,lastW=innerWidth;window.addEventListener('resize',()=>{if(innerWidth===lastW)return;lastW=innerWidth;clearTimeout(rt);rt=setTimeout(renderCharts,120)});
-matchMedia('(prefers-color-scheme: dark)').addEventListener('change',renderCharts);
+// ── Light/dark switch: choosing the system's own mode drops the saved choice, so the page follows the system again ──
+const darkMQ=matchMedia('(prefers-color-scheme: dark)');
+function isDark(){const t=document.documentElement.dataset.theme;return t?t==='dark':darkMQ.matches}
+function syncTheme(){
+  $('themeBtn').setAttribute('aria-checked',String(isDark()));
+  document.querySelectorAll('meta[name="theme-color"]').forEach(m=>m.content=css('--surface'));
+  renderCharts();
+}
+$('themeBtn').addEventListener('click',()=>{
+  const next=isDark()?'light':'dark',root=document.documentElement;
+  if(next===(darkMQ.matches?'dark':'light')){delete root.dataset.theme;try{localStorage.removeItem('theme')}catch(e){}}
+  else{root.dataset.theme=next;try{localStorage.setItem('theme',next)}catch(e){}}
+  syncTheme();
+});
+darkMQ.addEventListener('change',syncTheme);
+syncTheme();
 
 // ── Report download ──
 let dlApi=null;
