@@ -20,7 +20,7 @@
    --line is for cards and dividers; --ctl edges controls (inputs, buttons, drop zone) at 3:1+ on both --bg and --surface. Radius: 8px everywhere. */
 :root{
   --bg:#f3f4f6; --surface:#fbfbfc; --line:#dcdfe5; --ctl:#858b97; --text:#15171c; --muted:#555b69;
-  --a:#2c55c4; --b:#bb4f19; --err:#b42318; --grid:#e3e6eb;
+  --a:#c8281e; --b:#2f5a8a; --err:#931a2e; --grid:#e3e6eb;
   --btn-bg:#15171c; --btn-fg:#f3f4f6;
   --r:8px; --ease:cubic-bezier(.16,1,.3,1);
   --sans:'Geist',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif;
@@ -28,7 +28,7 @@
 }
 @media (prefers-color-scheme:dark){:root{
   --bg:#111317; --surface:#171a20; --line:#2b303b; --ctl:#636a79; --text:#e9ebf0; --muted:#a0a7b6;
-  --a:#89a4f3; --b:#f2945f; --err:#f4796f; --grid:#232833;
+  --a:#ff7a6e; --b:#8fb4e0; --err:#ff8fa3; --grid:#232833;
   --btn-bg:#e9ebf0; --btn-fg:#111317;
 }}
 *{margin:0;padding:0;box-sizing:border-box}
@@ -629,17 +629,17 @@ function render(){
   rep.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'start'});
 }
 
-function drawProfile(id,aData,bData,maxVal,unit,thresh){
-  const canvas=$(id);if(!canvas)return;
-  const ctx=canvas.getContext('2d'),dpr=window.devicePixelRatio||1;
-  const W=canvas.clientWidth,H=canvas.clientHeight;
+// tok reads a color token (css for the page's current mode); bg fills the chart, or leaves it transparent when null
+function drawProfile(canvas,W,H,dpr,tok,bg,aData,bData,maxVal,unit,thresh){
+  const ctx=canvas.getContext('2d');
   canvas.width=W*dpr;canvas.height=H*dpr;ctx.setTransform(dpr,0,0,dpr,0,0);
   const fs=W<480?12:11,pad={t:8,r:6,b:fs+14,l:fs*3.6},cW=W-pad.l-pad.r,cH=H-pad.t-pad.b;
   ctx.clearRect(0,0,W,H);
+  if(bg){ctx.fillStyle=bg;ctx.fillRect(0,0,W,H)}
   const maxMile=Math.max(aData[aData.length-1].mile,bData[bData.length-1].mile)||1;
   const x=m=>pad.l+(m/maxMile)*cW,y=v=>pad.t+cH-(Math.min(v,maxVal)/maxVal)*cH;
-  const muted=css('--muted'),grid=css('--grid');
-  ctx.font=fs+'px '+css('--mono');ctx.lineWidth=1;
+  const muted=tok('--muted'),grid=tok('--grid');
+  ctx.font=fs+'px '+tok('--mono');ctx.lineWidth=1;
   for(let i=0;i<=4;i++){const v=maxVal*i/4;ctx.strokeStyle=grid;ctx.beginPath();ctx.moveTo(pad.l,y(v));ctx.lineTo(pad.l+cW,y(v));ctx.stroke();
     ctx.fillStyle=muted;ctx.textAlign='right';ctx.fillText(Math.round(v)+unit,pad.l-6,y(v)+fs*0.35)}
   // Aim for about 3-5 mile labels whatever the route length
@@ -647,15 +647,34 @@ function drawProfile(id,aData,bData,maxVal,unit,thresh){
   ctx.textAlign='center';for(let m=0;m<=maxMile;m+=step){const t=m+' mi',hw=ctx.measureText(t).width/2;ctx.fillText(t,Math.min(Math.max(x(m),hw),W-hw),H-5)}
   if(thresh!=null){ctx.strokeStyle=muted;ctx.setLineDash([3,4]);ctx.beginPath();ctx.moveTo(pad.l,y(thresh));ctx.lineTo(pad.l+cW,y(thresh));ctx.stroke();ctx.setLineDash([])}
   const line=(d,c)=>{ctx.strokeStyle=c;ctx.lineWidth=1.75;ctx.lineJoin='round';ctx.beginPath();d.forEach((p,i)=>i?ctx.lineTo(x(p.mile),y(p.avg)):ctx.moveTo(x(p.mile),y(p.avg)));ctx.stroke()};
-  line(bData,css('--b'));line(aData,css('--a'));
+  line(bData,tok('--b'));line(aData,tok('--a'));
 }
+
+const CHARTS=[
+  ['compositeChart','compositeProfile',100,'',null],
+  ['curveChart','profile',400,'°',200],
+  ['emptyChart','emptyProfile',100,'',null],
+  ['canopyChart','canopyProfile',100,'%',null]];
 
 function renderCharts(){
   if(!routeA||!routeB)return;
-  drawProfile('compositeChart',routeA.compositeProfile,routeB.compositeProfile,100,'',null);
-  drawProfile('curveChart',routeA.profile,routeB.profile,400,'°',200);
-  drawProfile('emptyChart',routeA.emptyProfile,routeB.emptyProfile,100,'',null);
-  drawProfile('canopyChart',routeA.canopyProfile,routeB.canopyProfile,100,'%',null);
+  for(const [id,key,max,unit,thresh] of CHARTS){const c=$(id);if(c)drawProfile(c,c.clientWidth,c.clientHeight,window.devicePixelRatio||1,css,null,routeA[key],routeB[key],max,unit,thresh)}
+}
+
+// Light-mode tokens from the stylesheet's top-level :root rule (the dark values live inside a media rule),
+// so the downloaded report looks the same whatever mode the page is in
+function lightToken(){
+  for(const sheet of document.styleSheets){let rules;try{rules=sheet.cssRules}catch(e){continue}
+    for(const r of rules)if(r.selectorText===':root')return n=>r.style.getPropertyValue(n).trim()}
+  return css;
+}
+
+// Report charts are redrawn off-screen at a fixed size in light mode, not copied from the visible canvases
+function reportCharts(){
+  const tok=lightToken(),out={};
+  for(const [id,key,max,unit,thresh] of CHARTS){const c=document.createElement('canvas');
+    drawProfile(c,896,170,2,tok,tok('--surface'),routeA[key],routeB[key],max,unit,thresh);out[id]=c.toDataURL('image/png')}
+  return out;
 }
 
 function renderTable(){
@@ -685,7 +704,7 @@ async function saveFile(filename,data){
 
 async function exportReport(){
   const a=routeA,b=routeB,nA=esc(name(a)),nB=esc(name(b));
-  const img=id=>$(id).toDataURL('image/png');
+  const charts=reportCharts(),img=id=>charts[id];
   const row=(l,va,vb)=>`<tr><td>${l}</td><td class="a">${va}</td><td class="b">${vb}</td></tr>`;
   const head=`<thead><tr><th></th><th class="a">A: ${nA}</th><th class="b">B: ${nB}</th></tr></thead>`;
   const aM={},bM={};a.milesData.forEach(d=>aM[d.mile]=d);b.milesData.forEach(d=>bM[d.mile]=d);
@@ -695,7 +714,7 @@ async function exportReport(){
 <style>body{font-family:system-ui,sans-serif;max-width:960px;margin:0 auto;padding:32px;color:#15171c;font-size:13px;line-height:1.5}
 h1{font-size:22px;letter-spacing:-.02em}h2{font-size:15px;margin:28px 0 8px}.sub{color:#555b69}
 table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:5px 8px;border-bottom:1px solid #e3e6eb}
-td+td,th+th{text-align:right;font-family:ui-monospace,Menlo,monospace}.a{color:#2c55c4}.b{color:#bb4f19}
+td+td,th+th{text-align:right;font-family:ui-monospace,Menlo,monospace}.a{color:#c8281e}.b{color:#2f5a8a}
 .big{font-size:40px;font-family:ui-monospace,Menlo,monospace}img{width:100%;border:1px solid #e3e6eb;border-radius:8px;margin-top:6px}
 @media print{img{break-inside:avoid}}</style></head><body>
 <h1>Route comparison</h1><p class="sub">Generated ${new Date().toLocaleDateString()}</p>
