@@ -16,9 +16,10 @@
 @font-face{font-family:'Geist';src:url('fonts/Geist-Variable.woff2') format('woff2');font-weight:100 900;font-display:swap}
 @font-face{font-family:'Geist Mono';src:url('fonts/GeistMono-Variable.woff2') format('woff2');font-weight:100 900;font-display:swap}
 
-/* Tokens: one neutral family, route colors are data series (not UI accents). Radius: 8px everywhere. */
+/* Tokens: one neutral family, route colors are data series (not UI accents).
+   --line is for cards and dividers; --ctl edges controls (inputs, buttons, drop zone) at 3:1+ on both --bg and --surface. Radius: 8px everywhere. */
 :root{
-  --bg:#f3f4f6; --surface:#fbfbfc; --line:#dcdfe5; --text:#15171c; --muted:#555b69;
+  --bg:#f3f4f6; --surface:#fbfbfc; --line:#dcdfe5; --ctl:#858b97; --text:#15171c; --muted:#555b69;
   --a:#2c55c4; --b:#bb4f19; --err:#b42318; --grid:#e3e6eb;
   --btn-bg:#15171c; --btn-fg:#f3f4f6;
   --r:8px; --ease:cubic-bezier(.16,1,.3,1);
@@ -26,7 +27,7 @@
   --mono:'Geist Mono',ui-monospace,'SF Mono',Menlo,monospace;
 }
 @media (prefers-color-scheme:dark){:root{
-  --bg:#111317; --surface:#171a20; --line:#2b303b; --text:#e9ebf0; --muted:#a0a7b6;
+  --bg:#111317; --surface:#171a20; --line:#2b303b; --ctl:#636a79; --text:#e9ebf0; --muted:#a0a7b6;
   --a:#89a4f3; --b:#f2945f; --err:#f4796f; --grid:#232833;
   --btn-bg:#e9ebf0; --btn-fg:#111317;
 }}
@@ -46,10 +47,10 @@ h1{font-size:clamp(2rem,4.2vw,3rem);font-weight:650;letter-spacing:-0.035em;line
 /* Header photo: black and white, dimmed slightly in dark mode so it doesn't glare */
 .hero,.hero img{display:block}
 .hero img{width:100%;height:auto;filter:grayscale(1)}
-@media (prefers-color-scheme:dark){.hero img{filter:grayscale(1) brightness(.9)}}
-/* Wide: text left, photo right at its natural shape */
+@media (prefers-color-scheme:dark){.hero img{filter:grayscale(1) brightness(.75)}}
+/* Wide: text left takes the spare room, photo right at its natural shape, capped at 512px so the 1024px file stays sharp at 2x */
 @media(min-width:900px){
-  header{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,6fr);grid-template-areas:"intro hero";column-gap:48px;align-items:center}
+  header{display:grid;grid-template-columns:minmax(0,1fr) min(512px,50%);grid-template-areas:"intro hero";column-gap:48px;align-items:center}
   .intro{grid-area:intro}.hero{grid-area:hero}
   .hero img{border-radius:var(--r)}
 }
@@ -67,7 +68,7 @@ h1{font-size:clamp(2rem,4.2vw,3rem);font-weight:650;letter-spacing:-0.035em;line
 .route h2{font-size:1rem;font-weight:600;display:flex;align-items:center;gap:10px}
 .key{width:22px;height:4px;border-radius:2px;flex:none}
 .key.a{background:var(--a)}.key.b{background:var(--b)}
-.drop{border:1.5px dashed var(--line);border-radius:var(--r);padding:18px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;transition:border-color .2s var(--ease),background-color .2s var(--ease)}
+.drop{border:1.5px dashed var(--ctl);border-radius:var(--r);padding:18px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;transition:border-color .2s var(--ease),background-color .2s var(--ease)}
 .drop.over{border-color:var(--text)}
 .drop .status{flex:1 1 12rem;min-width:0}
 .drop p{color:var(--muted);font-size:.9rem}
@@ -81,19 +82,19 @@ h1{font-size:clamp(2rem,4.2vw,3rem);font-weight:650;letter-spacing:-0.035em;line
 .field .row{display:flex;gap:8px}
 /* Narrow cards: input gets its own line, Paste and Load route share the next */
 @container (max-width:380px){.field .row{flex-wrap:wrap}.field .row input{flex:1 1 100%}.field .row .btn{flex:1 1 0}}
-.field input{flex:1;min-width:0;background:var(--bg);border:1px solid var(--line);border-radius:var(--r);padding:9px 12px;font-size:.9rem}
+.field input{flex:1;min-width:0;background:var(--bg);border:1px solid var(--ctl);border-radius:var(--r);padding:9px 12px;font-size:.9rem}
 .field input::placeholder{color:var(--muted)}
 .field input:focus{outline:none;border-color:var(--text)}
 .field input:disabled{opacity:.6}
 .help{font-size:.8rem;color:var(--muted)}
 .error{font-size:.82rem;color:var(--err);min-height:0}
 .error:empty{display:none}
-.btn{border:1px solid var(--line);background:var(--surface);border-radius:var(--r);padding:9px 14px;font-size:.88rem;font-weight:550;cursor:pointer;white-space:nowrap;transition:transform .12s var(--ease),border-color .2s var(--ease)}
+.btn{border:1px solid var(--ctl);background:var(--surface);border-radius:var(--r);padding:9px 14px;font-size:.88rem;font-weight:550;cursor:pointer;white-space:nowrap;transition:transform .12s var(--ease),border-color .2s var(--ease)}
 @media(hover:hover){.btn:hover{border-color:var(--text)}}
 .btn:active{transform:scale(.98)}
 .btn.primary{background:var(--btn-bg);color:var(--btn-fg);border-color:var(--btn-bg)}
 .btn:disabled{opacity:.55;cursor:default;transform:none}
-.skeleton{height:14px;width:60%;border-radius:4px;background:linear-gradient(90deg,var(--line),var(--grid),var(--line));background-size:200% 100%}
+.skeleton{height:14px;width:60%;border-radius:var(--r);background:linear-gradient(90deg,var(--line),var(--grid),var(--line));background-size:200% 100%}
 @media (prefers-reduced-motion:no-preference){.skeleton{animation:shimmer 1.2s linear infinite}}
 @keyframes shimmer{to{background-position:-200% 0}}
 
