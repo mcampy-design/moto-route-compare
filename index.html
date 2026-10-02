@@ -4,7 +4,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#f3f4f6" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#111317" media="(prefers-color-scheme: dark)">
 <title>Route Comparison</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-title" content="Route Compare">
 <style>
 /* Self-hosted Geist (SIL OFL, see fonts/LICENSE.txt) */
 @font-face{font-family:'Geist';src:url('fonts/Geist-Variable.woff2') format('woff2');font-weight:100 900;font-display:swap}
@@ -25,6 +31,7 @@
   --btn-bg:#e9ebf0; --btn-fg:#111317;
 }}
 *{margin:0;padding:0;box-sizing:border-box}
+[hidden]{display:none!important}
 html{-webkit-text-size-adjust:100%}
 body{font-family:var(--sans);background:var(--bg);color:var(--text);line-height:1.55;-webkit-font-smoothing:antialiased;
   padding:env(safe-area-inset-top,0) env(safe-area-inset-right,0) env(safe-area-inset-bottom,0) env(safe-area-inset-left,0)}
@@ -36,6 +43,22 @@ button,input{font:inherit;color:inherit}
 header{padding:56px 0 28px}
 h1{font-size:clamp(2rem,4.2vw,3rem);font-weight:650;letter-spacing:-0.035em;line-height:1.05}
 .lede{margin-top:12px;color:var(--muted);max-width:56ch;font-size:1.02rem}
+/* Header photo: black and white, dimmed slightly in dark mode so it doesn't glare */
+.hero,.hero img{display:block}
+.hero img{width:100%;height:auto;filter:grayscale(1)}
+@media (prefers-color-scheme:dark){.hero img{filter:grayscale(1) brightness(.9)}}
+/* Wide: text left, photo right at its natural shape */
+@media(min-width:900px){
+  header{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,6fr);grid-template-areas:"intro hero";column-gap:48px;align-items:center}
+  .intro{grid-area:intro}.hero{grid-area:hero}
+  .hero img{border-radius:var(--r)}
+}
+/* Narrow: edge-to-edge 2:1 strip above the title, cropped to keep rider and bike in frame */
+@media(max-width:899px){
+  header{padding-top:0}
+  .hero{margin:0 -20px 24px}
+  .hero img{aspect-ratio:2/1;object-fit:cover;object-position:62% 50%}
+}
 
 /* Inputs */
 .routes{display:grid;grid-template-columns:minmax(0,1fr);gap:16px}
@@ -81,6 +104,8 @@ h1{font-size:clamp(2rem,4.2vw,3rem);font-weight:650;letter-spacing:-0.035em;line
 .res-head{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:20px}
 .res-head h2{font-size:1.5rem;font-weight:650;letter-spacing:-0.02em}
 .res-actions{display:flex;flex-wrap:wrap;gap:8px}
+.reset-row{display:flex;justify-content:flex-end;margin-top:12px}
+.share-err{margin-top:10px}
 .scores{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
 .score{padding:4px 0}
 .score .name{font-size:.9rem;color:var(--muted);overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow-wrap:anywhere}
@@ -116,11 +141,12 @@ th.grp .key{display:inline-block;vertical-align:middle;margin-right:6px}
 footer{padding:24px 0 48px;color:var(--muted);font-size:.82rem;max-width:70ch}
 @media (prefers-reduced-motion:no-preference){.reveal{animation:rise .35s var(--ease) both}}
 @keyframes rise{from{opacity:0;transform:translateY(6px)}}
-@media(max-width:767px){header{padding-top:36px}.res-head{flex-wrap:wrap}}
+@media(max-width:767px){.res-head{flex-wrap:wrap}}
 /* Phones */
 @media(max-width:480px){
   .wrap{padding:0 16px}
-  header{padding:28px 0 20px}
+  header{padding-bottom:20px}
+  .hero{margin:0 -16px 20px}
   .route{padding:16px;gap:14px}
   .drop{padding:14px}
   .panel{padding:14px}
@@ -144,8 +170,15 @@ button,summary,.drop{touch-action:manipulation}
 <body>
 <div class="wrap">
 <header>
-  <h1>Route comparison</h1>
-  <p class="lede">Compare two motorcycle routes for curves, empty roads, and tree cover. Use a GPX file or a Google Maps link.</p>
+  <picture class="hero">
+    <source srcset="images/hero.webp" type="image/webp">
+    <img src="images/hero.jpg" width="1024" height="559" fetchpriority="high" decoding="async" alt="Rider in a leather jacket on a black Honda VFR, parked beside an empty highway through high desert.">
+  </picture>
+  <div class="intro">
+    <h1>Route comparison</h1>
+    <p class="lede">Compare two motorcycle routes for curves, empty roads, and tree cover. Use a GPX file or a Google Maps link.</p>
+    <p class="error share-err" id="shareErr" role="alert"></p>
+  </div>
 </header>
 
 <main>
@@ -179,6 +212,7 @@ button,summary,.drop{touch-action:manipulation}
     </div>
   </div>
 </section>
+<div class="reset-row" id="resetRow" hidden><button class="btn" type="button" id="resetBtn">Start over</button></div>
 
 <section id="results" aria-live="polite">
   <div class="empty" id="emptyState"><strong>Add both routes to compare them.</strong>Each one can come from a GPX file or a Google Maps link.</div>
@@ -419,20 +453,53 @@ function ingest(pts,label,slot,link=null){
   if(slot==='a')routeA=analysis;else routeB=analysis;
   setStatus(slot,`<p class="loaded" title="${esc(label)}"><span class="nm">${esc(label)}</span><span class="num">${Math.round(analysis.totalDist)} mi</span></p>`);
   $('route'+S).classList.add('has-'+slot);
-  syncUrl();
+  syncState();
+  updateReset();
   if(routeA&&routeB)render();
 }
 
-// Keep ?a=/?b= in the address bar matching the loaded routes: a link sets it,
-// a GPX file removes it, and a slot that hasn't loaded yet is left alone.
-function syncUrl(){
-  const u=new URL(location.href);
+// ── Saved links: only Google Maps links are stored, never GPX data ──
+const LINKS_KEY='routeLinks';
+function loadSavedLinks(){
+  try{const v=JSON.parse(localStorage.getItem(LINKS_KEY)||'{}');
+    return {a:typeof v.a==='string'?v.a:null,b:typeof v.b==='string'?v.b:null}}
+  catch(e){return {a:null,b:null}}
+}
+
+// Keep ?a=/?b= in the address bar and the saved links matching the loaded
+// routes: a link sets it, a GPX file removes it, and a slot that hasn't
+// loaded yet is left alone.
+function syncState(){
+  const u=new URL(location.href),saved=loadSavedLinks();
   for(const [k,r] of [['a',routeA],['b',routeB]]){
     if(!r)continue;
     if(r.link)u.searchParams.set(k,r.link);else u.searchParams.delete(k);
+    saved[k]=r.link||null;
   }
   if(u.href!==location.href)history.replaceState(history.state,'',u);
+  try{if(saved.a||saved.b)localStorage.setItem(LINKS_KEY,JSON.stringify(saved));else localStorage.removeItem(LINKS_KEY)}catch(e){}
 }
+
+// "Start over" shows once there's anything to clear
+function updateReset(){
+  $('resetRow').hidden=!(routeA||routeB||$('linkA').value||$('linkB').value);
+}
+
+// Bumped by Start over so a route that's still loading is dropped when it arrives
+let loadGen=0;
+
+function startOver(){
+  loadGen++;routeA=routeB=null;$('shareErr').textContent='';
+  for(const slot of ['a','b']){const S=slot.toUpperCase();
+    $('link'+S).value='';$('err'+S).textContent='';setStatus(slot,EMPTY_STATUS);$('route'+S).classList.remove('has-'+slot)}
+  try{localStorage.removeItem(LINKS_KEY)}catch(e){}
+  const u=new URL(location.href);u.searchParams.delete('a');u.searchParams.delete('b');history.replaceState(history.state,'',u);
+  const rep=$('report');rep.hidden=true;rep.innerHTML='';$('emptyState').hidden=false;
+  updateReset();
+  window.scrollTo({top:0,behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});
+}
+$('resetBtn').addEventListener('click',startOver);
+for(const S of ['A','B'])$('link'+S).addEventListener('input',updateReset);
 
 function loadFile(file,slot){
   const reader=new FileReader();
@@ -464,18 +531,20 @@ async function loadGoogle(slot){
   if(!raw){err.textContent='Paste a Google Maps directions link first.';return}
   const link=extractLink(raw);
   if(!link){err.textContent="Couldn't find a link in that. Paste a Google Maps directions link.";return}
-  $('link'+S).value=link;
+  $('link'+S).value=link;updateReset();
   btn.disabled=paste.disabled=true;btn.textContent='Routing…';
-  const prev=$('status'+S).innerHTML;
+  const prev=$('status'+S).innerHTML,gen=loadGen;
   setStatus(slot,'<div class="skeleton" aria-label="Loading route"></div>');
   try{
     const res=await fetch(ROUTE_PROXY_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({link})});
     const j=await res.json().catch(()=>({}));
+    if(gen!==loadGen)return;
     if(!res.ok)throw new Error(j.error||'The route service returned an error.');
     const short=s=>s.split(',')[0].trim();
     const label=short(j.stops[0])+' to '+short(j.stops[j.stops.length-1])+(j.avoidHighways?' (no highways)':'');
     ingest(decodePolyline(j.encodedPolyline),label,slot,link);
   }catch(e){
+    if(gen!==loadGen)return;
     setStatus(slot,prev);
     err.textContent=(e instanceof TypeError)?"Couldn't reach the route service. Check your connection and try again.":e.message;
   }finally{btn.disabled=paste.disabled=false;btn.textContent='Load route'}
@@ -645,11 +714,32 @@ td+td,th+th{text-align:right;font-family:ui-monospace,Menlo,monospace}.a{color:#
   try{await saveFile(`route-comparison-${slug(name(a))}-vs-${slug(name(b))}.html`,html)}catch(e){console.error(e)}
 }
 
-// Load routes from a shared comparison link (?a=...&b=...)
+// ── Startup: comparison links, shares from other apps, saved links ──
 if(ROUTE_PROXY_URL){
   const q=new URLSearchParams(location.search);
-  for(const slot of ['a','b']){const v=q.get(slot);if(v){$('link'+slot.toUpperCase()).value=v;loadGoogle(slot)}}
+  const links={a:q.get('a'),b:q.get('b')};
+  // No ?a=/?b= in the address: pick up the links from the last visit
+  if(!links.a&&!links.b)Object.assign(links,loadSavedLinks());
+  // Shared from another app (the manifest's share_target sends title/text/url),
+  // or ?share=: goes into Route A if it's empty, otherwise Route B
+  const SHARE_PARAMS=['title','text','url','share'];
+  const shared=SHARE_PARAMS.map(k=>q.get(k)).filter(Boolean).join(' ');
+  if(shared){
+    const link=extractLink(shared);
+    if(link)links[links.a?'b':'a']=link;
+    else $('shareErr').textContent="That share didn't include a link. Share a Google Maps directions link.";
+  }
+  // Tidy the address bar to the usual ?a=/?b= form, and save the same links,
+  // before loading
+  const u=new URL(location.href);
+  for(const k of SHARE_PARAMS)u.searchParams.delete(k);
+  for(const k of ['a','b'])if(links[k])u.searchParams.set(k,links[k]);else u.searchParams.delete(k);
+  if(u.href!==location.href)history.replaceState(history.state,'',u);
+  try{if(links.a||links.b)localStorage.setItem(LINKS_KEY,JSON.stringify({a:links.a,b:links.b}));else localStorage.removeItem(LINKS_KEY)}catch(e){}
+  for(const slot of ['a','b'])if(links[slot]){$('link'+slot.toUpperCase()).value=links[slot];loadGoogle(slot)}
 }
+
+if('serviceWorker' in navigator&&location.protocol!=='file:')navigator.serviceWorker.register('sw.js').catch(()=>{});
 </script>
 </body>
 </html>
