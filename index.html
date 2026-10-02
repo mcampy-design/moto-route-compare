@@ -288,16 +288,19 @@ function analyze(rawPts){
     // Canopy estimation via provider
     const canopy=CanopyProvider.estimateMile(avg,mx,traffic.roadClass);
 
-    // Per-mile composite: curviness normalized to 0-100, then weighted
-    const curvScore=Math.min(100, Math.round(avg / 1.5));
-    milesData.push({mile:m,avg:Math.round(avg*10)/10,lat:pts[mi][0],lon:pts[mi][1],
+    // Per-mile composite: curviness normalized to 0-100, then weighted.
+    // avg is degrees per 0.1-mi step (the class/curvy thresholds are tuned to that);
+    // scores and displays use degrees per mile, same as the route-level curvScore.
+    const degPerMi=avg*ppm;
+    const curvScore=Math.min(100, Math.round(degPerMi / 1.5));
+    milesData.push({mile:m,avg:Math.round(degPerMi),lat:pts[mi][0],lon:pts[mi][1],
       roadClass:traffic.roadClass,estAADT:traffic.estAADT,emptiness,canopyPct:canopy.canopyPct,
       curvScore, composite:Math.round(curvScore*0.5 + emptiness*0.3 + canopy.canopyPct*0.2)});
     if(avg>20)curvyMi++;else if(avg<8)straightMi++;
     if(avg>15){run++}else{if(run)runs.push(run);run=0}
   }
   if(run)runs.push(run);runs.sort((a,b)=>b-a);
-  const profile=[];for(let m=0;m<nm;m+=5){const ch=deltas.slice(m*ppm,Math.min((m+5)*ppm,deltas.length));if(ch.length)profile.push({mile:m,avg:Math.round(ch.reduce((s,v)=>s+v,0)/ch.length*10)/10})}
+  const profile=[];for(let m=0;m<nm;m+=5){const ch=deltas.slice(m*ppm,Math.min((m+5)*ppm,deltas.length));if(ch.length)profile.push({mile:m,avg:Math.round(ch.reduce((s,v)=>s+v,0)/ch.length*ppm)})}
   // Emptiness profile per 5mi
   const emptyProfile=[];for(let m=0;m<nm;m+=5){const seg=milesData.filter(d=>d.mile>=m&&d.mile<m+5);if(seg.length)emptyProfile.push({mile:m,avg:Math.round(mean(seg.map(s=>s.emptiness)))})}
   // Canopy profile per 5mi
@@ -487,7 +490,7 @@ function drawProfile(id,aData,bData,maxVal,unit,thresh){
 function renderCharts(){
   if(!routeA||!routeB)return;
   drawProfile('compositeChart',routeA.compositeProfile,routeB.compositeProfile,100,'',null);
-  drawProfile('curveChart',routeA.profile,routeB.profile,40,'°',20);
+  drawProfile('curveChart',routeA.profile,routeB.profile,400,'°',200);
   drawProfile('emptyChart',routeA.emptyProfile,routeB.emptyProfile,100,'',null);
   drawProfile('canopyChart',routeA.canopyProfile,routeB.canopyProfile,100,'%',null);
 }
