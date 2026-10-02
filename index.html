@@ -53,9 +53,11 @@ h1{font-size:clamp(2rem,4.2vw,3rem);font-weight:650;letter-spacing:-0.035em;line
 .drop .loaded .num{color:var(--muted);font-weight:400;margin-left:6px;flex:none}
 .route.has-a .drop{border-style:solid;border-color:var(--a)}
 .route.has-b .drop{border-style:solid;border-color:var(--b)}
-.field{display:grid;grid-template-columns:minmax(0,1fr);gap:6px}
+.field{display:grid;grid-template-columns:minmax(0,1fr);gap:6px;container-type:inline-size}
 .field label{font-size:.85rem;font-weight:550}
 .field .row{display:flex;gap:8px}
+/* Narrow cards: input gets its own line, Paste and Load route share the next */
+@container (max-width:380px){.field .row{flex-wrap:wrap}.field .row input{flex:1 1 100%}.field .row .btn{flex:1 1 0}}
 .field input{flex:1;min-width:0;background:var(--bg);border:1px solid var(--line);border-radius:var(--r);padding:9px 12px;font-size:.9rem}
 .field input::placeholder{color:var(--muted)}
 .field input:focus{outline:none;border-color:var(--text)}
@@ -78,6 +80,7 @@ h1{font-size:clamp(2rem,4.2vw,3rem);font-weight:650;letter-spacing:-0.035em;line
 .empty strong{display:block;color:var(--text);font-weight:600;margin-bottom:4px}
 .res-head{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:20px}
 .res-head h2{font-size:1.5rem;font-weight:650;letter-spacing:-0.02em}
+.res-actions{display:flex;flex-wrap:wrap;gap:8px}
 .scores{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
 .score{padding:4px 0}
 .score .name{font-size:.9rem;color:var(--muted);overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow-wrap:anywhere}
@@ -156,7 +159,7 @@ button,summary,.drop{touch-action:manipulation}
     </div>
     <div class="field">
       <label for="linkA">Or paste a Google Maps directions link</label>
-      <div class="row"><input type="url" id="linkA" inputmode="url" enterkeyhint="go" autocomplete="off" placeholder="https://maps.app.goo.gl/..."><button class="btn primary" type="button" id="btnA" onclick="loadGoogle('a')">Load route</button></div>
+      <div class="row"><input type="url" id="linkA" inputmode="url" enterkeyhint="go" autocomplete="off" placeholder="https://maps.app.goo.gl/..."><button class="btn" type="button" id="pasteA" hidden>Paste</button><button class="btn primary" type="button" id="btnA" onclick="loadGoogle('a')">Load route</button></div>
       <p class="help" id="helpA">Short or full links both work.</p>
       <p class="error" id="errA" role="alert"></p>
     </div>
@@ -170,7 +173,7 @@ button,summary,.drop{touch-action:manipulation}
     </div>
     <div class="field">
       <label for="linkB">Or paste a Google Maps directions link</label>
-      <div class="row"><input type="url" id="linkB" inputmode="url" enterkeyhint="go" autocomplete="off" placeholder="https://maps.app.goo.gl/..."><button class="btn primary" type="button" id="btnB" onclick="loadGoogle('b')">Load route</button></div>
+      <div class="row"><input type="url" id="linkB" inputmode="url" enterkeyhint="go" autocomplete="off" placeholder="https://maps.app.goo.gl/..."><button class="btn" type="button" id="pasteB" hidden>Paste</button><button class="btn primary" type="button" id="btnB" onclick="loadGoogle('b')">Load route</button></div>
       <p class="help" id="helpB">Short or full links both work.</p>
       <p class="error" id="errB" role="alert"></p>
     </div>
@@ -384,19 +387,51 @@ if(!ROUTE_PROXY_URL){
     $('link'+S).disabled=true;$('btn'+S).disabled=true;
     $('help'+S).textContent="Link import isn't set up on this copy of the tool yet.";
   }
+}else if(navigator.clipboard&&navigator.clipboard.readText){
+  // Paste buttons only where the browser can read the clipboard (secure pages)
+  for(const slot of ['a','b']){const p=$('paste'+slot.toUpperCase());p.hidden=false;p.addEventListener('click',()=>pasteLink(slot))}
+}
+
+async function pasteLink(slot){
+  const S=slot.toUpperCase();let text;
+  try{text=await navigator.clipboard.readText()}
+  catch(e){$('err'+S).textContent="Couldn't read the clipboard. Paste into the box instead.";return}
+  if(!text.trim()){$('err'+S).textContent='The clipboard is empty.';return}
+  $('link'+S).value=text.trim();
+  loadGoogle(slot);
+}
+
+// Pull the first https link out of pasted text, so Google Maps share text like
+// "Directions to X https://maps.app.goo.gl/abc" works. Trailing punctuation is dropped.
+function extractLink(text){
+  const m=String(text).match(/https:\/\/[^\s<>"']+/i);
+  return m?m[0].replace(/[).,;:!?\]]+$/,''):'';
 }
 
 function setStatus(slot,html){$('status'+slot.toUpperCase()).innerHTML=html}
 
-function ingest(pts,label,slot){
+// link: the Google Maps link the route came from, or null for GPX files
+function ingest(pts,label,slot,link=null){
   const S=slot.toUpperCase();
   $('err'+S).textContent='';
   if(!pts||pts.length<10){$('err'+S).textContent='Could not read a route from that. Found '+(pts?pts.length:0)+' points.';setStatus(slot,EMPTY_STATUS);return}
-  const analysis=analyze(pts);analysis.filename=label;
+  const analysis=analyze(pts);analysis.filename=label;analysis.link=link;
   if(slot==='a')routeA=analysis;else routeB=analysis;
   setStatus(slot,`<p class="loaded" title="${esc(label)}"><span class="nm">${esc(label)}</span><span class="num">${Math.round(analysis.totalDist)} mi</span></p>`);
   $('route'+S).classList.add('has-'+slot);
+  syncUrl();
   if(routeA&&routeB)render();
+}
+
+// Keep ?a=/?b= in the address bar matching the loaded routes: a link sets it,
+// a GPX file removes it, and a slot that hasn't loaded yet is left alone.
+function syncUrl(){
+  const u=new URL(location.href);
+  for(const [k,r] of [['a',routeA],['b',routeB]]){
+    if(!r)continue;
+    if(r.link)u.searchParams.set(k,r.link);else u.searchParams.delete(k);
+  }
+  if(u.href!==location.href)history.replaceState(history.state,'',u);
 }
 
 function loadFile(file,slot){
@@ -422,12 +457,15 @@ function decodePolyline(str){
 }
 
 async function loadGoogle(slot){
-  const S=slot.toUpperCase(),err=$('err'+S),btn=$('btn'+S);
+  const S=slot.toUpperCase(),err=$('err'+S),btn=$('btn'+S),paste=$('paste'+S);
   if(!ROUTE_PROXY_URL)return;
   err.textContent='';
-  const link=$('link'+S).value.trim();
-  if(!link){err.textContent='Paste a Google Maps directions link first.';return}
-  btn.disabled=true;btn.textContent='Routing…';
+  const raw=$('link'+S).value.trim();
+  if(!raw){err.textContent='Paste a Google Maps directions link first.';return}
+  const link=extractLink(raw);
+  if(!link){err.textContent="Couldn't find a link in that. Paste a Google Maps directions link.";return}
+  $('link'+S).value=link;
+  btn.disabled=paste.disabled=true;btn.textContent='Routing…';
   const prev=$('status'+S).innerHTML;
   setStatus(slot,'<div class="skeleton" aria-label="Loading route"></div>');
   try{
@@ -436,11 +474,28 @@ async function loadGoogle(slot){
     if(!res.ok)throw new Error(j.error||'The route service returned an error.');
     const short=s=>s.split(',')[0].trim();
     const label=short(j.stops[0])+' to '+short(j.stops[j.stops.length-1])+(j.avoidHighways?' (no highways)':'');
-    ingest(decodePolyline(j.encodedPolyline),label,slot);
+    ingest(decodePolyline(j.encodedPolyline),label,slot,link);
   }catch(e){
     setStatus(slot,prev);
     err.textContent=(e instanceof TypeError)?"Couldn't reach the route service. Check your connection and try again.":e.message;
-  }finally{btn.disabled=false;btn.textContent='Load route'}
+  }finally{btn.disabled=paste.disabled=false;btn.textContent='Load route'}
+}
+
+// ── Comparison links: ?a=<Google Maps link>&b=<Google Maps link> ──
+function comparisonUrl(){
+  return location.href.split(/[?#]/)[0]+'?'+new URLSearchParams({a:routeA.link,b:routeB.link});
+}
+
+async function copyComparisonLink(btn){
+  const url=comparisonUrl();let ok=false;
+  try{await navigator.clipboard.writeText(url);ok=true}
+  catch(e){
+    // No async clipboard (older browser or non-https page): copy from a hidden textarea
+    const t=document.createElement('textarea');t.value=url;t.setAttribute('readonly','');t.style.cssText='position:fixed;top:0;opacity:0';
+    document.body.appendChild(t);t.select();try{ok=document.execCommand('copy')}catch(_){}t.remove();
+  }
+  btn.textContent=ok?'Link copied':"Couldn't copy";
+  clearTimeout(btn._t);btn._t=setTimeout(()=>{btn.textContent='Copy comparison link'},2000);
 }
 
 // ── Rendering ──
@@ -470,7 +525,7 @@ function render(){
   $('emptyState').hidden=true;
   const rep=$('report');rep.hidden=false;rep.classList.remove('reveal');void rep.offsetWidth;rep.classList.add('reveal');
   rep.innerHTML=`
-  <div class="res-head"><h2>Comparison</h2><button class="btn" type="button" id="exportBtn">Download report</button></div>
+  <div class="res-head"><h2>Comparison</h2><div class="res-actions">${a.link&&b.link?'<button class="btn" type="button" id="shareBtn">Copy comparison link</button>':''}<button class="btn" type="button" id="exportBtn">Download report</button></div></div>
   <div class="scores">
     <div class="score a"><div class="name" title="${esc(name(a))}">A: ${esc(name(a))}</div><div class="big">${a.composite}</div><div class="unit">ride quality, out of 100</div></div>
     <div class="score b"><div class="name" title="${esc(name(b))}">B: ${esc(name(b))}</div><div class="big">${b.composite}</div><div class="unit">ride quality, out of 100</div></div>
@@ -499,6 +554,7 @@ function render(){
   </div>
   <details><summary>Per-mile data</summary><div class="table-wrap" id="tableWrap"></div></details>`;
   $('exportBtn').addEventListener('click',exportReport);
+  if($('shareBtn'))$('shareBtn').addEventListener('click',e=>copyComparisonLink(e.currentTarget));
   renderCharts();renderTable();
   rep.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'start'});
 }
@@ -587,6 +643,12 @@ td+td,th+th{text-align:right;font-family:ui-monospace,Menlo,monospace}.a{color:#
 </body></html>`;
   const slug=s=>s.replace(/[^a-z0-9]+/gi,'-').replace(/^-|-$/g,'').toLowerCase().slice(0,40);
   try{await saveFile(`route-comparison-${slug(name(a))}-vs-${slug(name(b))}.html`,html)}catch(e){console.error(e)}
+}
+
+// Load routes from a shared comparison link (?a=...&b=...)
+if(ROUTE_PROXY_URL){
+  const q=new URLSearchParams(location.search);
+  for(const slot of ['a','b']){const v=q.get(slot);if(v){$('link'+slot.toUpperCase()).value=v;loadGoogle(slot)}}
 }
 </script>
 </body>
