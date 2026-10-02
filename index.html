@@ -48,9 +48,9 @@ h1{font-size:clamp(2rem,4.2vw,3rem);font-weight:650;letter-spacing:-0.035em;line
 .hero,.hero img{display:block}
 .hero img{width:100%;height:auto;filter:grayscale(1)}
 @media (prefers-color-scheme:dark){.hero img{filter:grayscale(1) brightness(.75)}}
-/* Wide: text left takes the spare room, photo right at its natural shape, capped at 512px so the 1024px file stays sharp at 2x */
+/* Wide: text left, photo right at its natural shape */
 @media(min-width:900px){
-  header{display:grid;grid-template-columns:minmax(0,1fr) min(512px,50%);grid-template-areas:"intro hero";column-gap:48px;align-items:center}
+  header{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,6fr);grid-template-areas:"intro hero";column-gap:48px;align-items:center}
   .intro{grid-area:intro}.hero{grid-area:hero}
   .hero img{border-radius:var(--r)}
 }
@@ -172,8 +172,8 @@ button,summary,.drop{touch-action:manipulation}
 <div class="wrap">
 <header>
   <picture class="hero">
-    <source srcset="images/hero.webp" type="image/webp">
-    <img src="images/hero.jpg" width="1024" height="559" fetchpriority="high" decoding="async" alt="Rider in a leather jacket on a black Honda VFR, parked beside an empty highway through high desert.">
+    <source srcset="images/hero-1024.webp 1024w, images/hero-1536.webp 1536w, images/hero-2048.webp 2048w" sizes="(min-width: 900px) 560px, 100vw" type="image/webp">
+    <img src="images/hero-1024.jpg" width="1024" height="559" fetchpriority="high" decoding="async" alt="Rider in a leather jacket on a black Honda VFR, parked beside an empty highway through high desert.">
   </picture>
   <div class="intro">
     <h1>Route comparison</h1>
