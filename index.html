@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>GPX Route Comparison</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+:root{--bg:#0c0e14;--s1:#151821;--s2:#1d2130;--border:#2a3048;--text:#dfe1ea;--dim:#6e7590;--dim2:#4a5068;--a:#5b8af5;--b:#e8764a;--hot:#e84057;--warm:#e8a830;--mid:#3dba6e;--flat:#555d78;--empty:#8b5cf6;--radius:8px;box-sizing:border-box;padding-top:env(safe-area-inset-top,0);padding-bottom:env(safe-area-inset-bottom,0)}
+html{scroll-padding-top:env(safe-area-inset-top,0)}*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--text);line-height:1.55;-webkit-font-smoothing:antialiased}
+.shell{max-width:1200px;margin:0 auto;padding:0 16px}
+header{padding:28px 0 0}header h1{font-size:1.35rem;font-weight:700;letter-spacing:-0.03em}header p{color:var(--dim);font-size:0.82rem;margin-top:2px}
+.drop-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:20px 0}
+@media(max-width:600px){.drop-row{grid-template-columns:1fr}}
+.drop-zone{border:2px dashed var(--border);border-radius:var(--radius);padding:28px 16px;text-align:center;cursor:pointer;transition:.2s}
+.drop-zone:hover,.drop-zone.drag-over{border-color:var(--a);background:#5b8af508}
+.drop-zone.loaded{border-style:solid}.drop-zone.a.loaded{border-color:var(--a);background:#5b8af50a}.drop-zone.b.loaded{border-color:var(--b);background:#e8764a0a}
+.drop-zone input{display:none}.drop-zone .label{font-size:0.82rem;color:var(--dim)}.drop-zone .label strong{color:var(--text)}
+.drop-zone .filename{font-size:0.78rem;margin-top:6px}.drop-zone.a .filename{color:var(--a)}.drop-zone.b .filename{color:var(--b)}
+#results{display:none}
+.section-label{font-size:0.65rem;color:var(--dim2);text-transform:uppercase;letter-spacing:0.08em;margin:20px 0 8px;padding-left:2px}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;margin-bottom:4px}
+.card{background:var(--s1);border:1px solid var(--border);border-radius:var(--radius);padding:14px}
+.card .k{font-size:0.68rem;color:var(--dim);letter-spacing:0.03em;text-transform:uppercase}
+.card .row{display:flex;justify-content:space-between;align-items:flex-end;margin-top:8px;gap:8px}
+.card .v{font-family:'JetBrains Mono',monospace;font-size:1.2rem;font-weight:500}
+.card .v.a{color:var(--a)}.card .v.b{color:var(--b)}
+.card .sub{font-size:0.6rem;color:var(--dim)}
+.card .winner{display:inline-block;font-size:0.55rem;padding:1px 5px;border-radius:3px;margin-left:4px;font-weight:600}
+.card .winner.a{background:#5b8af520;color:var(--a)}.card .winner.b{background:#e8764a20;color:var(--b)}
+.chart-box{background:var(--s1);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:16px}
+.chart-box h3{font-size:0.85rem;font-weight:600;margin-bottom:10px}
+.chart-legend{display:flex;gap:14px;flex-wrap:wrap;margin-top:8px;font-size:0.72rem;color:var(--dim)}
+.chart-legend span{display:flex;align-items:center;gap:4px}.chart-legend .cd{width:10px;height:3px;border-radius:1px}
+canvas{display:block}
+.table-box{background:var(--s1);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:24px}
+.table-box h3{font-size:0.85rem;font-weight:600;margin-bottom:10px}
+.table-scroll{max-height:300px;overflow-y:auto}
+table{width:100%;border-collapse:collapse;font-size:0.72rem}
+th{text-align:left;padding:5px 8px;color:var(--dim);font-weight:500;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--s1)}
+td{padding:4px 8px;border-bottom:1px solid #2a304844;font-family:'JetBrains Mono',monospace;font-size:0.7rem}
+.bar-cell{position:relative}.bar-inner{position:absolute;left:0;top:2px;bottom:2px;border-radius:2px;opacity:0.25}
+.source-note{font-size:0.65rem;color:var(--dim2);margin-top:6px;font-style:italic}
+.export-bar{display:none;justify-content:flex-end;margin-bottom:12px}.export-bar.visible{display:flex}
+.export-btn{background:var(--s1);border:1px solid var(--border);color:var(--text);padding:7px 16px;border-radius:6px;font-size:0.78rem;font-family:inherit;cursor:pointer;font-weight:500;transition:.15s}
+.export-btn:hover{border-color:var(--a);color:var(--a)}
+footer{text-align:center;padding:16px 0 32px;font-size:0.7rem;color:var(--dim2)}
+@media print{
+  @page{size:letter landscape;margin:0.5in}
+  body{background:#fff!important;color:#111!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .shell{max-width:100%;padding:0}header h1{color:#111}header p{color:#555}
+  .drop-row,.export-bar,footer,.source-note{display:none!important}#results{display:block!important}
+  .cards{grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:8px}
+  .card{background:#f5f6f8!important;border-color:#ddd!important;padding:10px;break-inside:avoid}.card .k{color:#666}
+  .card .v.a{color:#2563eb}.card .v.b{color:#c2410c}.card .sub{color:#888}
+  .card .winner.a{background:#2563eb20;color:#2563eb}.card .winner.b{background:#c2410c20;color:#c2410c}
+  .chart-box{background:#f5f6f8!important;border-color:#ddd!important;break-inside:avoid;page-break-inside:avoid}
+  .chart-box h3{color:#111}.chart-legend{color:#555}
+  .section-label{color:#888}
+  .table-box{background:#fff!important;border-color:#ddd!important;break-before:page}
+  .table-box h3{color:#111}.table-scroll{max-height:none!important;overflow:visible!important}
+  table{font-size:0.65rem}th{background:#f5f6f8!important;color:#555;border-color:#ccc}td{border-color:#eee;color:#222}
+  .bar-inner{opacity:0.15;print-color-adjust:exact;-webkit-print-color-adjust:exact}canvas{max-width:100%!important}
+}
+</style>
+</head>
+<body>
+<div class="shell">
+<header>
+  <h1>GPX Route Comparison</h1>
+  <p>Drop two GPX files to compare curviness and road emptiness</p>
+</header>
+<div class="drop-row">
+  <div class="drop-zone a" id="dropA" onclick="document.getElementById('fileA').click()">
+    <input type="file" id="fileA" accept=".gpx"><div class="label"><strong>Route A</strong> — drop GPX or click</div><div class="filename" id="nameA"></div>
+  </div>
+  <div class="drop-zone b" id="dropB" onclick="document.getElementById('fileB').click()">
+    <input type="file" id="fileB" accept=".gpx"><div class="label"><strong>Route B</strong> — drop GPX or click</div><div class="filename" id="nameB"></div>
+  </div>
+</div>
+<div id="results">
+  <div class="export-bar" id="exportBar"><button class="export-btn" id="exportBtn" disabled>Export PDF</button></div>
+  <div class="cards" id="compositeCards" style="margin-bottom:4px"></div>
+  <div class="chart-box">
+    <h3>Ride Quality Profile</h3>
+    <canvas id="compositeChart" style="width:100%;height:180px"></canvas>
+    <div class="chart-legend">
+      <span><span class="cd" style="background:var(--a)"></span> <span id="compLabelA">Route A</span></span>
+      <span><span class="cd" style="background:var(--b)"></span> <span id="compLabelB">Route B</span></span>
+    </div>
+    <div class="source-note">50% curviness · 30% emptiness · 20% tree cover</div>
+  </div>
+  <div class="section-label">Curviness</div>
+  <div class="cards" id="curveCards"></div>
+  <div class="section-label">Emptiness (estimated from road geometry)</div>
+  <div class="cards" id="emptyCards"></div>
+  <div class="section-label">Tree Cover (estimated from road geometry)</div>
+  <div class="cards" id="canopyCards"></div>
+  <div class="source-note" id="sourceNote">Traffic and canopy estimates derived from road geometry. Connect APIs (TomTom, NLCD Tree Canopy WCS) for measured data.</div>
+  <div class="chart-box">
+    <h3>Curviness Profile</h3>
+    <canvas id="curveChart" style="width:100%;height:180px"></canvas>
+    <div class="chart-legend">
+      <span><span class="cd" style="background:var(--a)"></span> <span id="chartLabelA">Route A</span></span>
+      <span><span class="cd" style="background:var(--b)"></span> <span id="chartLabelB">Route B</span></span>
+      <span><span class="cd" style="background:var(--hot);opacity:.4"></span> 20° curvy threshold</span>
+    </div>
+  </div>
+  <div class="chart-box">
+    <h3>Emptiness Profile</h3>
+    <canvas id="emptyChart" style="width:100%;height:180px"></canvas>
+    <div class="chart-legend">
+      <span><span class="cd" style="background:var(--a)"></span> <span id="emptyLabelA">Route A</span></span>
+      <span><span class="cd" style="background:var(--b)"></span> <span id="emptyLabelB">Route B</span></span>
+    </div>
+  </div>
+  <div class="chart-box">
+    <h3>Tree Cover Profile</h3>
+    <canvas id="canopyChart" style="width:100%;height:180px"></canvas>
+    <div class="chart-legend">
+      <span><span class="cd" style="background:var(--a)"></span> <span id="canopyLabelA">Route A</span></span>
+      <span><span class="cd" style="background:var(--b)"></span> <span id="canopyLabelB">Route B</span></span>
+    </div>
+  </div>
+  <div class="table-box">
+    <h3>Per-mile breakdown</h3>
+    <div class="table-scroll" id="tableScroll"></div>
+  </div>
+</div>
+</div>
+<footer>GPX Route Comparison — all processing runs in your browser, nothing uploaded</footer>
+
+<script>
+// ══════════════════════════════════════════════════════════════
+// TRAFFIC PROVIDER INTERFACE
+// Swap this module for TomTom/Mapbox API integration.
+// The provider must return { roadClass, estAADT, emptiness }
+// for each mile segment based on its geometry or API lookup.
+// ══════════════════════════════════════════════════════════════
+const TrafficProvider = {
+  name: 'geometry',  // 'geometry' | 'tomtom' | 'mapbox'
+
+  // Geometry-based estimation (default, no API needed)
+  estimateMile(avgBC, maxBC) {
+    if (avgBC < 3 && maxBC < 15)  return { roadClass:'highway',   estAADT:25000 };
+    if (avgBC < 6 && maxBC < 25)  return { roadClass:'primary',   estAADT:8000  };
+    if (avgBC < 12 && maxBC < 40) return { roadClass:'secondary', estAADT:3000  };
+    if (avgBC < 20)               return { roadClass:'tertiary',  estAADT:800   };
+    if (avgBC < 35)               return { roadClass:'minor',     estAADT:200   };
+    return                          { roadClass:'track',     estAADT:50    };
+  },
+
+  emptinessFromAADT(aadt) {
+    return Math.max(0, Math.min(100, Math.round(100 - (aadt / 250))));
+  },
+
+  // ── Future: TomTom API ──
+  // async queryTomTom(lat, lon, apiKey) { ... }
+  // ── Future: Mapbox Traffic ──
+  // async queryMapbox(lat, lon, token) { ... }
+};
+
+// ══════════════════════════════════════════════════════════════
+// CANOPY PROVIDER INTERFACE
+// Swap this for NLCD Tree Canopy WCS or aerial imagery ML.
+// Returns { canopyPct } — percent tree cover within ~100m of road.
+// ══════════════════════════════════════════════════════════════
+const CanopyProvider = {
+  name: 'geometry',  // 'geometry' | 'nlcd' | 'google-eie'
+
+  // Geometry-based proxy (default):
+  // In the KY/TN/Appalachian corridor, canopy correlates with
+  // road class and curviness. Minor mountain roads run through
+  // forest; highways and farmland corridors are open.
+  estimateMile(avgBC, maxBC, roadClass) {
+    // Road class is the primary signal
+    const classBase = {highway:10, primary:20, secondary:35, tertiary:50, minor:70, track:85};
+    let base = classBase[roadClass] || 40;
+    // Curviness boost: very winding roads in this region are typically
+    // gorge/ridge roads with heavy canopy
+    if (avgBC > 25) base = Math.min(95, base + 15);
+    else if (avgBC > 15) base = Math.min(90, base + 5);
+    // Straight low-class roads could be farmland — slight penalty
+    if (avgBC < 5 && (roadClass === 'tertiary' || roadClass === 'secondary')) base -= 10;
+    return { canopyPct: Math.max(0, Math.min(100, Math.round(base))) };
+  },
+
+  // ── Future: NLCD Tree Canopy Cover (USGS/MRLC WCS) ──
+  // The definitive data source for automated canopy analysis.
+  // 30m resolution, entire US, percent canopy per pixel.
+  // Buffer route centerline by 100m, sample raster, average.
+  //
+  // async queryNLCD(lat, lon) {
+  //   const bbox = `${lon-0.001},${lat-0.001},${lon+0.001},${lat+0.001}`;
+  //   const url = `https://www.mrlc.gov/geoserver/mrlc_download/wcs?`
+  //     + `service=WCS&version=2.0.1&request=GetCoverage`
+  //     + `&CoverageId=nlcd_tcc_conus_2021_v2021-4`
+  //     + `&subset=Lat(${lat-0.001},${lat+0.001})`
+  //     + `&subset=Long(${lon-0.001},${lon+0.001})`
+  //     + `&format=application/json`;
+  //   const res = await fetch(url);
+  //   // Parse coverage values, average the pixels
+  //   return { canopyPct: averagedValue };
+  // },
+
+  // ── Future: Google Environmental Insights Explorer ──
+  // Municipal-level canopy data. Good for urban sections,
+  // not available for rural county roads.
+  // async queryGoogleEIE(lat, lon) { ... }
+};
+
+let routeA=null,routeB=null;
+
+function setupDrop(zoneId,fileId,slot){
+  const zone=document.getElementById(zoneId),input=document.getElementById(fileId);
+  ['dragenter','dragover'].forEach(e=>zone.addEventListener(e,ev=>{ev.preventDefault();zone.classList.add('drag-over')}));
+  ['dragleave','drop'].forEach(e=>zone.addEventListener(e,()=>zone.classList.remove('drag-over')));
+  zone.addEventListener('drop',ev=>{ev.preventDefault();if(ev.dataTransfer.files[0])loadFile(ev.dataTransfer.files[0],slot)});
+  input.addEventListener('change',()=>{if(input.files[0])loadFile(input.files[0],slot)});
+}
+setupDrop('dropA','fileA','a'); setupDrop('dropB','fileB','b');
+
+function loadFile(file,slot){
+  const reader=new FileReader();
+  reader.onload=e=>{
+    const pts=parseGPX(e.target.result);
+    if(!pts||pts.length<10){alert('Could not parse GPX — found '+(pts?pts.length:0)+' points.');return}
+    const analysis=analyze(pts); analysis.filename=file.name;
+    if(slot==='a'){routeA=analysis;document.getElementById('nameA').textContent=file.name+' ('+pts.length+' pts)';document.getElementById('dropA').classList.add('loaded')}
+    else{routeB=analysis;document.getElementById('nameB').textContent=file.name+' ('+pts.length+' pts)';document.getElementById('dropB').classList.add('loaded')}
+    if(routeA&&routeB)render();
+  };
+  reader.readAsText(file);
+}
+
+function parseGPX(xml){
+  const doc=new DOMParser().parseFromString(xml,'text/xml');const sources=[];
+  const tk=[];doc.querySelectorAll('trkpt').forEach(el=>tk.push([+el.getAttribute('lat'),+el.getAttribute('lon')]));if(tk.length)sources.push(tk);
+  const rt=[];doc.querySelectorAll('rtept').forEach(el=>rt.push([+el.getAttribute('lat'),+el.getAttribute('lon')]));if(rt.length)sources.push(rt);
+  const gm=[];const rpts=doc.getElementsByTagNameNS('http://www.garmin.com/xmlschemas/GpxExtensions/v3','rpt');
+  for(let i=0;i<rpts.length;i++){const la=+rpts[i].getAttribute('lat'),lo=+rpts[i].getAttribute('lon');if(!isNaN(la)&&!isNaN(lo))gm.push([la,lo])}
+  if(gm.length)sources.push(gm);
+  if(!gm.length){const fb=[];doc.querySelectorAll('rpt').forEach(el=>{const la=+el.getAttribute('lat'),lo=+el.getAttribute('lon');if(!isNaN(la)&&!isNaN(lo))fb.push([la,lo])});if(fb.length)sources.push(fb)}
+  if(!sources.length)return[];
+  const pts=sources.reduce((b,c)=>c.length>b.length?c:b,[]);
+  const dd=[pts[0]];for(let i=1;i<pts.length;i++)if(pts[i][0]!==pts[i-1][0]||pts[i][1]!==pts[i-1][1])dd.push(pts[i]);return dd;
+}
+
+const Rv=3958.8;
+function hav(a,b,c,d){const dl=rad(c-a),dn=rad(d-b),x=Math.sin(dl/2)**2+Math.cos(rad(a))*Math.cos(rad(c))*Math.sin(dn/2)**2;return Rv*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x))}
+function brg(a,b,c,d){const dn=rad(d-b),la=rad(a),lc=rad(c);return((Math.atan2(Math.sin(dn)*Math.cos(lc),Math.cos(la)*Math.sin(lc)-Math.sin(la)*Math.cos(lc)*Math.cos(dn))*180/Math.PI)%360+360)%360}
+function rad(d){return d*Math.PI/180}
+function resample(pts,iv=0.1){const out=[pts[0]];let cum=0,nx=iv;for(let i=1;i<pts.length;i++){const d=hav(pts[i-1][0],pts[i-1][1],pts[i][0],pts[i][1]);cum+=d;while(cum>=nx){const ov=cum-nx,t=d>0?1-ov/d:1;out.push([pts[i-1][0]+t*(pts[i][0]-pts[i-1][0]),pts[i-1][1]+t*(pts[i][1]-pts[i-1][1])]);nx+=iv}}return out}
+function mean(a){return a.reduce((s,v)=>s+v,0)/a.length}
+
+function analyze(rawPts){
+  const pts=resample(rawPts,0.1),td=(pts.length-1)*0.1,crow=hav(pts[0][0],pts[0][1],pts[pts.length-1][0],pts[pts.length-1][1]);
+  const bearings=[];for(let i=1;i<pts.length;i++)bearings.push(brg(pts[i-1][0],pts[i-1][1],pts[i][0],pts[i][1]));
+  const deltas=[];for(let i=1;i<bearings.length;i++){let d=bearings[i]-bearings[i-1];d=((d+180)%360+360)%360-180;deltas.push(Math.abs(d))}
+  const totalAbs=deltas.reduce((s,v)=>s+v,0),ppm=10;
+  const milesData=[],nm=Math.floor(td);let curvyMi=0,straightMi=0;const runs=[];let run=0;
+  const classCounts={highway:0,primary:0,secondary:0,tertiary:0,minor:0,track:0};
+  let aadtSum=0,emptySum=0;
+
+  for(let m=0;m<nm;m++){
+    const ch=deltas.slice(m*ppm,(m+1)*ppm);if(!ch.length)continue;
+    const avg=ch.reduce((s,v)=>s+v,0)/ch.length;
+    const mx=Math.max(...ch);
+    const mi=Math.min(m*ppm+5,pts.length-1);
+
+    // Traffic estimation via provider
+    const traffic=TrafficProvider.estimateMile(avg,mx);
+    const emptiness=TrafficProvider.emptinessFromAADT(traffic.estAADT);
+    classCounts[traffic.roadClass]=(classCounts[traffic.roadClass]||0)+1;
+    aadtSum+=traffic.estAADT; emptySum+=emptiness;
+
+    // Canopy estimation via provider
+    const canopy=CanopyProvider.estimateMile(avg,mx,traffic.roadClass);
+
+    // Per-mile composite: curviness normalized to 0-100, then weighted
+    const curvScore=Math.min(100, Math.round(avg / 1.5));
+    milesData.push({mile:m,avg:Math.round(avg*10)/10,lat:pts[mi][0],lon:pts[mi][1],
+      roadClass:traffic.roadClass,estAADT:traffic.estAADT,emptiness,canopyPct:canopy.canopyPct,
+      curvScore, composite:Math.round(curvScore*0.5 + emptiness*0.3 + canopy.canopyPct*0.2)});
+    if(avg>20)curvyMi++;else if(avg<8)straightMi++;
+    if(avg>15){run++}else{if(run)runs.push(run);run=0}
+  }
+  if(run)runs.push(run);runs.sort((a,b)=>b-a);
+  const profile=[];for(let m=0;m<nm;m+=5){const ch=deltas.slice(m*ppm,Math.min((m+5)*ppm,deltas.length));if(ch.length)profile.push({mile:m,avg:Math.round(ch.reduce((s,v)=>s+v,0)/ch.length*10)/10})}
+  // Emptiness profile per 5mi
+  const emptyProfile=[];for(let m=0;m<nm;m+=5){const seg=milesData.filter(d=>d.mile>=m&&d.mile<m+5);if(seg.length)emptyProfile.push({mile:m,avg:Math.round(mean(seg.map(s=>s.emptiness)))})}
+  // Canopy profile per 5mi
+  const canopyProfile=[];for(let m=0;m<nm;m+=5){const seg=milesData.filter(d=>d.mile>=m&&d.mile<m+5);if(seg.length)canopyProfile.push({mile:m,avg:Math.round(mean(seg.map(s=>s.canopyPct)))})}
+  // Composite profile per 5mi
+  const compositeProfile=[];for(let m=0;m<nm;m+=5){const seg=milesData.filter(d=>d.mile>=m&&d.mile<m+5);if(seg.length)compositeProfile.push({mile:m,avg:Math.round(mean(seg.map(s=>s.composite)))})}
+
+  const curvScore=Math.min(100,Math.round((totalAbs/td)/1.5));
+  const empt=Math.round(emptySum/nm);
+  const canopyAvg=Math.round(mean(milesData.map(d=>d.canopyPct)));
+  const composite=Math.round(curvScore*0.5 + empt*0.3 + canopyAvg*0.2);
+
+  return{pts,milesData,profile,emptyProfile,canopyProfile,compositeProfile,totalDist:Math.round(td*10)/10,crow:Math.round(crow*10)/10,
+    circuity:Math.round(td/crow*1000)/1000,curvIndex:Math.round(totalAbs/td*10)/10,
+    t30:Math.round(deltas.filter(d=>d>30).length/td*100)/100,
+    t60:Math.round(deltas.filter(d=>d>60).length/td*100)/100,
+    pctCurvy:Math.round(1000*curvyMi/td)/10,pctStraight:Math.round(1000*straightMi/td)/10,
+    longestRun:runs[0]||0,top5:runs.slice(0,5),
+    classCounts,avgAADT:Math.round(aadtSum/nm),emptiness:empt,
+    avgCanopy:canopyAvg,curvScore,composite,
+    pctMinor:Math.round(1000*((classCounts.minor||0)+(classCounts.track||0))/nm)/10,
+    pctMajor:Math.round(1000*((classCounts.highway||0)+(classCounts.primary||0))/nm)/10,
+    trafficSource:TrafficProvider.name,canopySource:CanopyProvider.name};
+}
+
+function render(){
+  document.getElementById('results').style.display='block';
+  const nA=routeA.filename.replace('.gpx',''),nB=routeB.filename.replace('.gpx','');
+  ['chartLabelA','emptyLabelA','canopyLabelA','compLabelA'].forEach(id=>document.getElementById(id).textContent=nA);
+  ['chartLabelB','emptyLabelB','canopyLabelB','compLabelB'].forEach(id=>document.getElementById(id).textContent=nB);
+  const geoMode=TrafficProvider.name==='geometry'&&CanopyProvider.name==='geometry';
+  document.getElementById('sourceNote').textContent=geoMode
+    ?'Traffic and canopy estimates derived from road geometry. Connect APIs (TomTom, NLCD Tree Canopy WCS) for measured data.'
+    :'Traffic: '+TrafficProvider.name+' · Canopy: '+CanopyProvider.name;
+  renderCards();renderCharts();renderTable();
+  document.getElementById('exportBar').classList.add('visible');
+  document.getElementById('results').scrollIntoView({behavior:'smooth'});
+}
+
+function renderCards(){
+  const a=routeA,b=routeB,nA=a.filename.replace('.gpx',''),nB=b.filename.replace('.gpx','');
+  function card(k,va,vb,w){return`<div class="card"><div class="k">${k}</div><div class="row"><div><div class="v a">${va}${w==='a'?'<span class="winner a">▲</span>':''}</div><div class="sub">${nA}</div></div><div style="text-align:right"><div class="v b">${vb}${w==='b'?'<span class="winner b">▲</span>':''}</div><div class="sub">${nB}</div></div></div></div>`}
+  document.getElementById('compositeCards').innerHTML=[
+    card('Ride Quality',a.composite+'/100',b.composite+'/100',a.composite>b.composite?'a':'b'),
+    card('Curviness Component',a.curvScore+'/100',b.curvScore+'/100',a.curvScore>b.curvScore?'a':'b'),
+    card('Emptiness Component',a.emptiness+'/100',b.emptiness+'/100',a.emptiness>b.emptiness?'a':'b'),
+    card('Tree Cover Component',a.avgCanopy+'%',b.avgCanopy+'%',a.avgCanopy>b.avgCanopy?'a':'b'),
+  ].join('');
+  document.getElementById('curveCards').innerHTML=[
+    card('Distance',a.totalDist+' mi',b.totalDist+' mi',null),
+    card('Curvature Index',a.curvIndex+'°/mi',b.curvIndex+'°/mi',a.curvIndex>b.curvIndex?'a':'b'),
+    card('Circuity',a.circuity,b.circuity,a.circuity>b.circuity?'a':'b'),
+    card('Turns >30°/mi',a.t30,b.t30,a.t30>b.t30?'a':'b'),
+    card('Curvy Miles',a.pctCurvy+'%',b.pctCurvy+'%',a.pctCurvy>b.pctCurvy?'a':'b'),
+    card('Longest Run',a.longestRun+' mi',b.longestRun+' mi',a.longestRun>b.longestRun?'a':'b'),
+  ].join('');
+  document.getElementById('emptyCards').innerHTML=[
+    card('Emptiness Score',a.emptiness+'/100',b.emptiness+'/100',a.emptiness>b.emptiness?'a':'b'),
+    card('Est. Daily Traffic',a.avgAADT.toLocaleString()+'/day',b.avgAADT.toLocaleString()+'/day',a.avgAADT<b.avgAADT?'a':'b'),
+    card('Minor/Track Roads',a.pctMinor+'%',b.pctMinor+'%',a.pctMinor>b.pctMinor?'a':'b'),
+    card('Primary/Highway',a.pctMajor+'%',b.pctMajor+'%',a.pctMajor<b.pctMajor?'a':'b'),
+  ].join('');
+  document.getElementById('canopyCards').innerHTML=[
+    card('Avg Tree Cover',a.avgCanopy+'%',b.avgCanopy+'%',a.avgCanopy>b.avgCanopy?'a':'b'),
+  ].join('');
+}
+
+function drawProfile(canvasId,aData,bData,maxVal,yLabel,threshVal,threshLabel){
+  const canvas=document.getElementById(canvasId),ctx=canvas.getContext('2d');
+  const dpr=window.devicePixelRatio||1,rect=canvas.parentElement.getBoundingClientRect();
+  canvas.width=rect.width*dpr;canvas.height=180*dpr;canvas.style.height='180px';ctx.scale(dpr,dpr);
+  const W=rect.width,H=180,pad={t:10,r:10,b:28,l:36},cW=W-pad.l-pad.r,cH=H-pad.t-pad.b;
+  ctx.clearRect(0,0,W,H);
+  const maxMile=Math.max(aData[aData.length-1].mile,bData[bData.length-1].mile);
+  const x=m=>pad.l+(m/maxMile)*cW,y=v=>pad.t+cH-(Math.min(v,maxVal)/maxVal)*cH;
+  ctx.strokeStyle='#2a3048';ctx.lineWidth=0.5;
+  for(let v=0;v<=maxVal;v+=maxVal/4){ctx.beginPath();ctx.moveTo(pad.l,y(v));ctx.lineTo(pad.l+cW,y(v));ctx.stroke();ctx.fillStyle='#6e7590';ctx.font='10px JetBrains Mono,monospace';ctx.textAlign='right';ctx.fillText(Math.round(v)+(yLabel||''),pad.l-5,y(v)+3)}
+  for(let m=0;m<=maxMile;m+=50){ctx.fillStyle='#6e7590';ctx.textAlign='center';ctx.fillText(m,x(m),H-pad.b+14)}
+  ctx.fillText('Mile',x(maxMile/2),H-4);
+  if(threshVal!=null){ctx.strokeStyle='#e8405744';ctx.lineWidth=1;ctx.setLineDash([4,4]);ctx.beginPath();ctx.moveTo(pad.l,y(threshVal));ctx.lineTo(pad.l+cW,y(threshVal));ctx.stroke();ctx.setLineDash([])}
+  function drawLine(data,color){ctx.strokeStyle=color;ctx.lineWidth=1.5;ctx.globalAlpha=0.8;ctx.beginPath();data.forEach((d,i)=>{i===0?ctx.moveTo(x(d.mile),y(d.avg)):ctx.lineTo(x(d.mile),y(d.avg))});ctx.stroke();ctx.globalAlpha=1}
+  drawLine(bData,'#e8764a');drawLine(aData,'#5b8af5');
+}
+
+function renderCharts(){
+  drawProfile('compositeChart',routeA.compositeProfile,routeB.compositeProfile,100,'',null);
+  drawProfile('curveChart',routeA.profile,routeB.profile,40,'°',20);
+  drawProfile('emptyChart',routeA.emptyProfile,routeB.emptyProfile,100,'',null);
+  drawProfile('canopyChart',routeA.canopyProfile,routeB.canopyProfile,100,'%',null);
+}
+
+function renderTable(){
+  const maxMiles=Math.max(routeA.milesData.length,routeB.milesData.length);
+  const aMap={},bMap={};routeA.milesData.forEach(d=>aMap[d.mile]=d);routeB.milesData.forEach(d=>bMap[d.mile]=d);
+  const nA=routeA.filename.replace('.gpx',''),nB=routeB.filename.replace('.gpx','');
+  let html=`<table><thead><tr><th>Mi</th><th>${nA} °/mi</th><th>${nA} empty</th><th>${nA} canopy</th><th>${nB} °/mi</th><th>${nB} empty</th><th>${nB} canopy</th></tr></thead><tbody>`;
+  for(let m=0;m<maxMiles;m++){
+    const a=aMap[m],b=bMap[m];
+    html+=`<tr><td>${m}</td>`;
+    html+=`<td class="bar-cell">${a?`<div class="bar-inner" style="width:${Math.min(a.avg/40*100,100)}%;background:var(--a)"></div>${a.avg}°`:'—'}</td>`;
+    html+=`<td>${a?a.emptiness:''}</td>`;
+    html+=`<td>${a?a.canopyPct+'%':''}</td>`;
+    html+=`<td class="bar-cell">${b?`<div class="bar-inner" style="width:${Math.min(b.avg/40*100,100)}%;background:var(--b)"></div>${b.avg}°`:'—'}</td>`;
+    html+=`<td>${b?b.emptiness:''}</td>`;
+    html+=`<td>${b?b.canopyPct+'%':''}</td></tr>`;
+  }
+  html+='</tbody></table>';document.getElementById('tableScroll').innerHTML=html;
+}
+
+window.addEventListener('resize',()=>{if(routeA&&routeB)renderCharts()});
+
+// ── Downloads capability ──
+let dlApi=null;
+(async()=>{
+  // Inside Claude: use the downloads capability. Anywhere else: plain browser download.
+  try{ if(typeof claude!=='undefined') dlApi=await claude.use('downloads'); }catch(e){}
+  const btn=document.getElementById('exportBtn');
+  btn.disabled=false; btn.addEventListener('click',exportReport);
+})();
+
+async function saveFile(filename,data){
+  if(dlApi){ await dlApi.save({filename,data}); return; }
+  const blob=new Blob([data],{type:'text/html'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a'); a.href=url; a.download=filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+
+async function exportReport(){
+  if(!routeA||!routeB)return;
+  const a=routeA,b=routeB;
+  const nA=a.filename.replace('.gpx',''),nB=b.filename.replace('.gpx','');
+  // Convert canvases to data URLs
+  const curveImg=document.getElementById('curveChart').toDataURL('image/png');
+  const emptyImg=document.getElementById('emptyChart').toDataURL('image/png');
+  const canopyImg=document.getElementById('canopyChart').toDataURL('image/png');
+  const compImg=document.getElementById('compositeChart').toDataURL('image/png');
+
+  function row(label,va,vb){return`<tr><td style="padding:6px 10px;border-bottom:1px solid #ddd;font-weight:500">${label}</td><td style="padding:6px 10px;border-bottom:1px solid #ddd;color:#2563eb;font-family:monospace">${va}</td><td style="padding:6px 10px;border-bottom:1px solid #ddd;color:#c2410c;font-family:monospace">${vb}</td></tr>`}
+
+  let tableRows='';
+  const maxMi=Math.max(a.milesData.length,b.milesData.length);
+  const aMap={},bMap={};a.milesData.forEach(d=>aMap[d.mile]=d);b.milesData.forEach(d=>bMap[d.mile]=d);
+  for(let m=0;m<maxMi;m++){
+    const am=aMap[m],bm=bMap[m];
+    tableRows+=`<tr><td style="padding:3px 8px;border-bottom:1px solid #eee;font-family:monospace;font-size:11px">${m}</td><td style="padding:3px 8px;border-bottom:1px solid #eee;font-family:monospace;font-size:11px">${am?am.avg+'°':'—'}</td><td style="padding:3px 8px;border-bottom:1px solid #eee;font-family:monospace;font-size:11px">${am?am.emptiness:''}</td><td style="padding:3px 8px;border-bottom:1px solid #eee;font-family:monospace;font-size:11px">${bm?bm.avg+'°':'—'}</td><td style="padding:3px 8px;border-bottom:1px solid #eee;font-family:monospace;font-size:11px">${bm?bm.emptiness:''}</td></tr>`;
+  }
+
+  const html=`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Route Comparison — ${nA} vs ${nB}</title>
+<style>body{font-family:system-ui,sans-serif;max-width:1000px;margin:0 auto;padding:24px;color:#111;font-size:13px}
+h1{font-size:18px;margin-bottom:4px}h2{font-size:14px;color:#555;margin:20px 0 8px;text-transform:uppercase;letter-spacing:0.05em}
+.sub{color:#666;font-size:12px;margin-bottom:20px}
+table{width:100%;border-collapse:collapse;margin-bottom:16px}
+th{text-align:left;padding:6px 10px;background:#f5f6f8;border-bottom:2px solid #ddd;font-size:12px;color:#555}
+img{width:100%;max-width:100%;margin:8px 0;border:1px solid #eee;border-radius:4px}
+.note{font-size:11px;color:#999;font-style:italic;margin-top:4px}</style></head>
+<body>
+<h1>GPX Route Comparison</h1>
+<div class="sub">${nA} vs ${nB} — generated ${new Date().toLocaleDateString()}</div>
+
+<h2>Ride Quality Score</h2>
+<table><thead><tr><th>Metric</th><th style="color:#2563eb">${nA}</th><th style="color:#c2410c">${nB}</th></tr></thead><tbody>
+${row('Ride Quality',a.composite+'/100',b.composite+'/100')}
+${row('Curviness (50%)',a.curvScore+'/100',b.curvScore+'/100')}
+${row('Emptiness (30%)',a.emptiness+'/100',b.emptiness+'/100')}
+${row('Tree Cover (20%)',a.avgCanopy+'%',b.avgCanopy+'%')}
+</tbody></table>
+
+<h2>Ride Quality Profile</h2>
+<img src="${compImg}" alt="Ride quality profile chart">
+
+<h2>Curviness</h2>
+<table><thead><tr><th>Metric</th><th style="color:#2563eb">${nA}</th><th style="color:#c2410c">${nB}</th></tr></thead><tbody>
+${row('Distance',a.totalDist+' mi',b.totalDist+' mi')}
+${row('Curvature Index',a.curvIndex+'°/mi',b.curvIndex+'°/mi')}
+${row('Circuity',a.circuity,b.circuity)}
+${row('Turns >30°/mi',a.t30,b.t30)}
+${row('Curvy Miles',a.pctCurvy+'%',b.pctCurvy+'%')}
+${row('Longest Curvy Run',a.longestRun+' mi',b.longestRun+' mi')}
+</tbody></table>
+
+<h2>Emptiness (estimated)</h2>
+<table><thead><tr><th>Metric</th><th style="color:#2563eb">${nA}</th><th style="color:#c2410c">${nB}</th></tr></thead><tbody>
+${row('Emptiness Score',a.emptiness+'/100',b.emptiness+'/100')}
+${row('Est. Daily Traffic',a.avgAADT.toLocaleString()+'/day',b.avgAADT.toLocaleString()+'/day')}
+${row('Minor/Track Roads',a.pctMinor+'%',b.pctMinor+'%')}
+${row('Primary/Highway',a.pctMajor+'%',b.pctMajor+'%')}
+</tbody></table>
+
+<h2>Tree Cover (estimated)</h2>
+<table><thead><tr><th>Metric</th><th style="color:#2563eb">${nA}</th><th style="color:#c2410c">${nB}</th></tr></thead><tbody>
+${row('Avg Tree Cover',a.avgCanopy+'%',b.avgCanopy+'%')}
+</tbody></table>
+<div class="note">Traffic and canopy estimates derived from road geometry. Connect TomTom/Mapbox (traffic) or NLCD Tree Canopy WCS (canopy) for measured data.</div>
+
+<h2>Curviness Profile</h2>
+<img src="${curveImg}" alt="Curviness profile chart">
+
+<h2>Emptiness Profile</h2>
+<img src="${emptyImg}" alt="Emptiness profile chart">
+
+<h2>Tree Cover Profile</h2>
+<img src="${canopyImg}" alt="Tree cover profile chart">
+
+<h2>Per-mile Breakdown</h2>
+<table><thead><tr><th>Mi</th><th>${nA} °/mi</th><th>${nA} empty</th><th>${nB} °/mi</th><th>${nB} empty</th></tr></thead><tbody>
+${tableRows}
+</tbody></table>
+</body></html>`;
+
+  try{
+    await saveFile(`route-comparison-${nA}-vs-${nB}.html`,html);
+  }catch(e){console.error('Export failed:',e)}
+}
+</script>
+</body>
+</html>
