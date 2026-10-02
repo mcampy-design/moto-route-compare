@@ -1,0 +1,10 @@
+name = "moto-route-proxy"
+main = "worker.js"
+compatibility_date = "2026-09-01"
+
+[vars]
+# Comma-separated list of sites allowed to call this proxy.
+ALLOWED_ORIGINS = "https://mcampy-design.github.io"
+
+# The Google key is NOT stored here. Set it as an encrypted secret:
+#   npx wrangler secret put GOOGLE_MAPS_KEY
