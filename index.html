@@ -9,7 +9,7 @@
 <title>Route Comparison</title>
 <meta property="og:type" content="website">
 <meta property="og:title" content="Route Compare">
-<meta property="og:description" content="Compare two routes for curves, empty roads, and tree cover.">
+<meta property="og:description" content="Compare two routes for curves, quiet roads, and tree cover.">
 <meta property="og:image" content="https://mcampy-design.github.io/moto-route-compare/images/og-image.jpg">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
@@ -203,7 +203,7 @@ button,summary,.drop{touch-action:manipulation}
   </div>
   <div>
     <h1>Route comparison</h1>
-    <p class="lede">Compare two motorcycle routes for curves, empty roads, and tree cover. Use a GPX file or a Google Maps link.</p>
+    <p class="lede">Compare two motorcycle routes for curves, quiet roads, and tree cover. Use a GPX file or a Google Maps link.</p>
     <p class="error share-err" id="shareErr" role="alert"></p>
   </div>
 </header>
@@ -264,6 +264,18 @@ try{localStorage.removeItem('gmapsKey')}catch(e){}
 // Shown first, while measured data loads, and kept for any mile the
 // measured sources (FHWA HPMS traffic, USFS tree canopy) can't cover.
 // ══════════════════════════════════════════════════════════════
+// [cars per day, quiet-road score] anchor points
+const QUIET_CURVE=[[500,100],[1000,75],[2000,50],[5000,20],[10000,0]];
+// Ride quality weights (they sum to 1); the page and report text read from here too
+const WEIGHTS={curves:0.45,quiet:0.40,trees:0.15};
+// Curves score from degrees of turning per mile: soft saturation 100 * (1 - exp(-c / K)) rather than a hard cap, so very
+// twisty roads still separate from merely twisty ones. K = 82 keeps a 113 deg/mi route at 75 (what the old c / 1.5 gave).
+// 50 -> 46, 100 -> 70, 150 -> 84, 250 -> 95, 400 -> 99.
+const CURVE_K=82;
+const curvesFromDeg=c=>Math.round(100*(1-Math.exp(-c/CURVE_K)));
+const rideQuality=(curves,quiet,trees)=>Math.round(curves*WEIGHTS.curves+quiet*WEIGHTS.quiet+trees*WEIGHTS.trees);
+const weightsNote=()=>`Ride quality weighs curves at ${Math.round(WEIGHTS.curves*100)}%, quiet roads at ${Math.round(WEIGHTS.quiet*100)}%, and tree cover at ${Math.round(WEIGHTS.trees*100)}%.`;
+
 const TrafficProvider = {
   estimateMile(avgBC, maxBC) {
     if (avgBC < 3 && maxBC < 15)  return { roadClass:'highway',   estAADT:25000 };
@@ -274,9 +286,18 @@ const TrafficProvider = {
     return                          { roadClass:'track',     estAADT:50    };
   },
 
-  // Log scale: 100 at 50 cars/day, 75 at 500, 50 at 5,000, 25 at 50,000, clamped to 0-100.
-  emptinessFromAADT(aadt) {
-    return Math.max(0, Math.min(100, Math.round(100 - 25 * Math.log10(Math.max(aadt, 1) / 50))));
+  // Rider-scaled quiet-road score, interpolated on log(AADT): 100 at 500 cars/day or fewer, 75 at 1,000,
+  // 50 at 2,000, 20 at 5,000, 0 at 10,000 or more. The same curve scores measured, typical-for-class and estimated miles.
+  quietFromAADT(aadt) {
+    const pts = QUIET_CURVE;
+    if (!(aadt > pts[0][0])) return pts[0][1];
+    if (aadt >= pts[pts.length - 1][0]) return pts[pts.length - 1][1];
+    for (let i = 1; i < pts.length; i++) {
+      if (aadt < pts[i][0]) {
+        const t = (Math.log(aadt) - Math.log(pts[i - 1][0])) / (Math.log(pts[i][0]) - Math.log(pts[i - 1][0]));
+        return Math.round(pts[i - 1][1] + t * (pts[i][1] - pts[i - 1][1]));
+      }
+    }
   },
 };
 
@@ -332,24 +353,24 @@ function analyze(rawPts){
 
     // Estimates first; measured traffic and tree cover replace them mile by mile as they arrive
     const traffic=TrafficProvider.estimateMile(avg,mx);
-    const emptiness=TrafficProvider.emptinessFromAADT(traffic.estAADT);
+    const quietScore=TrafficProvider.quietFromAADT(traffic.estAADT);
     const canopy=CanopyProvider.estimateMile(avg,mx,traffic.roadClass);
 
     // Per-mile composite: curviness normalized to 0-100, then weighted.
     // avg is degrees per 0.1-mi step (the class/curvy thresholds are tuned to that);
     // scores and displays use degrees per mile, same as the route-level curvScore.
     const degPerMi=avg*ppm;
-    const curvScore=Math.min(100, Math.round(degPerMi / 1.5));
+    const curvScore=curvesFromDeg(degPerMi);
     milesData.push({mile:m,avg:Math.round(degPerMi),lat:pts[mi][0],lon:pts[mi][1],
-      roadClass:traffic.roadClass,fsystem:null,aadt:traffic.estAADT,aadtSrc:'est',aadtYear:null,emptiness,
+      roadClass:traffic.roadClass,fsystem:null,aadt:traffic.estAADT,aadtSrc:'est',aadtYear:null,quietScore,
       canopyPct:canopy.canopyPct,canopySrc:'est',
-      curvScore, composite:Math.round(curvScore*0.5 + emptiness*0.3 + canopy.canopyPct*0.2)});
+      curvScore, composite:rideQuality(curvScore,quietScore,canopy.canopyPct)});
     if(avg>20)curvyMi++;else if(avg<8)straightMi++;
     if(avg>15){run++}else{if(run)runs.push(run);run=0}
   }
   if(run)runs.push(run);runs.sort((a,b)=>b-a);
   const profile=[];for(let m=0;m<nm;m+=5){const ch=deltas.slice(m*ppm,Math.min((m+5)*ppm,deltas.length));if(ch.length)profile.push({mile:m,avg:Math.round(ch.reduce((s,v)=>s+v,0)/ch.length*ppm)})}
-  const curvScore=Math.min(100,Math.round((totalAbs/td)/1.5));
+  const curvScore=curvesFromDeg(totalAbs/td);
 
   const a={pts,milesData,profile,totalDist:Math.round(td*10)/10,crow:Math.round(crow*10)/10,
     circuity:Math.round(td/crow*1000)/1000,curvIndex:Math.round(totalAbs/td*10)/10,
@@ -367,20 +388,20 @@ function aggregate(a){
   const classCounts={highway:0,primary:0,secondary:0,tertiary:0,minor:0,track:0};
   for(const d of md)classCounts[d.roadClass]=(classCounts[d.roadClass]||0)+1;
   const per5=f=>{const out=[];for(let m=0;m<md.length;m+=5){const seg=md.filter(d=>d.mile>=m&&d.mile<m+5);if(seg.length)out.push({mile:m,avg:Math.round(mean(seg.map(f)))})}return out};
-  a.emptyProfile=per5(d=>d.emptiness);
+  a.quietProfile=per5(d=>d.quietScore);
   a.canopyProfile=per5(d=>d.canopyPct);
   a.compositeProfile=per5(d=>d.composite);
   a.classCounts=classCounts;
   a.avgAADT=Math.round(mean(md.map(d=>d.aadt)));
-  a.emptiness=Math.round(mean(md.map(d=>d.emptiness)));
+  a.quietRoads=Math.round(mean(md.map(d=>d.quietScore)));
   a.avgCanopy=Math.round(mean(md.map(d=>d.canopyPct)));
-  a.composite=Math.round(a.curvScore*0.5 + a.emptiness*0.3 + a.avgCanopy*0.2);
+  a.composite=rideQuality(a.curvScore,a.quietRoads,a.avgCanopy);
   a.pctMinor=Math.round(1000*((classCounts.minor||0)+(classCounts.track||0))/nm)/10;
   a.pctMajor=Math.round(1000*((classCounts.highway||0)+(classCounts.primary||0))/nm)/10;
   // Quiet miles: of the miles with a count (measured, or typical for the road class), the share under 1,000 cars a day.
   // Miles estimated from road shape are left out, so the figure only reflects real data. null when there are none.
   const counted=md.filter(d=>d.aadtSrc==='hpms'||d.aadtSrc==='class');
-  a.quiet=counted.length?Math.round(100*counted.filter(d=>d.aadt<QUIET_AADT).length/counted.length):null;
+  a.quietMiles=counted.length?Math.round(100*counted.filter(d=>d.aadt<QUIET_AADT).length/counted.length):null;
   const share=f=>md.filter(f).length/nm;
   a.cov={canopy:share(d=>d.canopySrc==='nlcd'),hpms:share(d=>d.aadtSrc==='hpms'),cls:share(d=>d.aadtSrc==='class'),est:share(d=>d.aadtSrc==='est')};
   const yrs=md.filter(d=>d.aadtYear).map(d=>d.aadtYear);
@@ -467,7 +488,7 @@ function startEnrichment(a){
       Object.assign(d,{aadt:m.aadt,aadtSrc:m.aadtSrc,aadtYear:m.aadtYear,fsystem:m.fsystem});
       if(m.fsystem)d.roadClass=CLASS_OF_FSYSTEM[m.fsystem]||d.roadClass;
       touched.add(d)}
-    for(const d of touched){d.emptiness=TrafficProvider.emptinessFromAADT(d.aadt);d.composite=Math.round(d.curvScore*0.5+d.emptiness*0.3+d.canopyPct*0.2)}
+    for(const d of touched){d.quietScore=TrafficProvider.quietFromAADT(d.aadt);d.composite=rideQuality(d.curvScore,d.quietScore,d.canopyPct)}
     if(c.failed)e.canopyFailed++;
     if(c.year)e.canopyYear=c.year;
     if(t.year)e.trafficYear=t.year;
@@ -705,13 +726,13 @@ function verdict(a,b){
   const d=a.composite-b.composite;
   if(Math.abs(d)<2)return 'The two routes score about the same.';
   const w=d>0?a:b,sgn=d>0?1:-1;
-  const parts=[['curvier roads',0.5*(a.curvScore-b.curvScore)],['emptier roads',0.3*(a.emptiness-b.emptiness)],['more tree cover',0.2*(a.avgCanopy-b.avgCanopy)]]
+  const parts=[['curvier roads',WEIGHTS.curves*(a.curvScore-b.curvScore)],['quieter roads',WEIGHTS.quiet*(a.quietRoads-b.quietRoads)],['more tree cover',WEIGHTS.trees*(a.avgCanopy-b.avgCanopy)]]
     .map(([t,v])=>[t,v*sgn]).sort((x,y)=>y[1]-x[1]);
   return `${esc(name(w))} scores ${Math.abs(d)} points higher, mostly from ${parts[0][0]}.`;
 }
 
 // "-" until measured data arrives (or when a route has no counted miles)
-const quietText=r=>r.quiet===null?'-':r.quiet+'%';
+const quietText=r=>r.quietMiles===null?'-':r.quietMiles+'%';
 
 function metricRows(rows){
   // rows: [label, aVal, bVal, aDisplay, bDisplay, higherIsBetter|null]
@@ -739,7 +760,7 @@ function render({fresh=true}={}){
     <div class="score b"><div class="name" title="${esc(name(b))}">B: ${esc(name(b))}</div><div class="big">${b.composite}</div><div class="unit">ride quality, out of 100</div></div>
   </div>
   <p class="verdict">${verdict(a,b)}</p>
-  <p class="weights">Ride quality weighs curves at 50%, empty roads at 30%, and tree cover at 20%.</p>
+  <p class="weights">${weightsNote()}</p>
   ${done<sections?`<p class="note" role="status">Looking up measured traffic and tree cover: ${done} of ${sections} sections done. Numbers below update as they arrive.</p>`:''}
   <div class="panel overall"><h3>Ride quality along the route</h3><canvas class="chart" id="compositeChart"></canvas></div>
   <div class="groups">
@@ -752,12 +773,12 @@ function render({fresh=true}={}){
       ['Detour vs. straight line',a.circuity,b.circuity,a.circuity+'x',b.circuity+'x',null]])}
       <canvas class="chart" id="curveChart"></canvas></div>
     <div class="panel"><h3>Traffic</h3>${metricRows([
-      ['Emptiness score',a.emptiness,b.emptiness,a.emptiness,b.emptiness,true],
+      ['Quiet roads score',a.quietRoads,b.quietRoads,a.quietRoads,b.quietRoads,true],
       ['Daily traffic (average)',a.avgAADT,b.avgAADT,a.avgAADT.toLocaleString()+' cars',b.avgAADT.toLocaleString()+' cars',false],
-      ['Quiet miles',a.quiet,b.quiet,quietText(a),quietText(b),a.quiet!==null&&b.quiet!==null?true:null],
+      ['Quiet miles',a.quietMiles,b.quietMiles,quietText(a),quietText(b),a.quietMiles!==null&&b.quietMiles!==null?true:null],
       ['Minor roads',a.pctMinor,b.pctMinor,a.pctMinor+'%',b.pctMinor+'%',true],
       ['Highways and US routes',a.pctMajor,b.pctMajor,a.pctMajor+'%',b.pctMajor+'%',false]])}
-      <canvas class="chart" id="emptyChart"></canvas>${noteHtml(notes.traffic)}</div>
+      <canvas class="chart" id="quietChart"></canvas>${noteHtml(notes.traffic)}</div>
     <div class="panel"><h3>Tree cover</h3>${metricRows([
       ['Average tree cover',a.avgCanopy,b.avgCanopy,a.avgCanopy+'%',b.avgCanopy+'%',true]])}
       <canvas class="chart" id="canopyChart"></canvas>${noteHtml(notes.canopy)}</div>
@@ -793,7 +814,7 @@ function drawProfile(canvas,W,H,dpr,tok,bg,aData,bData,maxVal,unit,thresh){
 const CHARTS=[
   ['compositeChart','compositeProfile',100,'',null],
   ['curveChart','profile',400,'°',200],
-  ['emptyChart','emptyProfile',100,'',null],
+  ['quietChart','quietProfile',100,'',null],
   ['canopyChart','canopyProfile',100,'%',null]];
 
 function renderCharts(){
@@ -821,10 +842,10 @@ function renderTable(){
   const n=Math.max(routeA.milesData.length,routeB.milesData.length);
   const aM={},bM={};routeA.milesData.forEach(d=>aM[d.mile]=d);routeB.milesData.forEach(d=>bM[d.mile]=d);
   let h='<table><thead><tr><th rowspan="2">Mile</th><th class="grp" colspan="4"><span class="key a"></span>A</th><th class="grp" colspan="4"><span class="key b"></span>B</th></tr>'
-    +'<tr><th>Curves</th><th>Traffic</th><th>Empty</th><th>Trees</th><th>Curves</th><th>Traffic</th><th>Empty</th><th>Trees</th></tr></thead><tbody>';
+    +'<tr><th>Curves</th><th>Traffic</th><th>Quiet</th><th>Trees</th><th>Curves</th><th>Traffic</th><th>Quiet</th><th>Trees</th></tr></thead><tbody>';
   const c=(d,f)=>d?f(d):'';
   for(let m=0;m<n;m++){const a=aM[m],b=bM[m];
-    h+=`<tr><td>${m}</td><td>${c(a,d=>d.avg+'°')}</td><td>${c(a,trafficCell)}</td><td>${c(a,d=>d.emptiness)}</td><td>${c(a,treeCell)}</td><td>${c(b,d=>d.avg+'°')}</td><td>${c(b,trafficCell)}</td><td>${c(b,d=>d.emptiness)}</td><td>${c(b,treeCell)}</td></tr>`}
+    h+=`<tr><td>${m}</td><td>${c(a,d=>d.avg+'°')}</td><td>${c(a,trafficCell)}</td><td>${c(a,d=>d.quietScore)}</td><td>${c(a,treeCell)}</td><td>${c(b,d=>d.avg+'°')}</td><td>${c(b,trafficCell)}</td><td>${c(b,d=>d.quietScore)}</td><td>${c(b,treeCell)}</td></tr>`}
   $('tableWrap').innerHTML=h+'</tbody></table>';
 }
 
@@ -864,7 +885,7 @@ async function exportReport(){
   const head=`<thead><tr><th></th><th class="a">A: ${nA}</th><th class="b">B: ${nB}</th></tr></thead>`;
   const aM={},bM={};a.milesData.forEach(d=>aM[d.mile]=d);b.milesData.forEach(d=>bM[d.mile]=d);
   let rows='';for(let m=0;m<Math.max(a.milesData.length,b.milesData.length);m++){const x=aM[m],y=bM[m];
-    rows+=`<tr><td>${m}</td><td>${x?x.avg+'°':''}</td><td>${x?trafficCell(x):''}</td><td>${x?x.emptiness:''}</td><td>${x?treeCell(x):''}</td><td>${y?y.avg+'°':''}</td><td>${y?trafficCell(y):''}</td><td>${y?y.emptiness:''}</td><td>${y?treeCell(y):''}</td></tr>`}
+    rows+=`<tr><td>${m}</td><td>${x?x.avg+'°':''}</td><td>${x?trafficCell(x):''}</td><td>${x?x.quietScore:''}</td><td>${x?treeCell(x):''}</td><td>${y?y.avg+'°':''}</td><td>${y?trafficCell(y):''}</td><td>${y?y.quietScore:''}</td><td>${y?treeCell(y):''}</td></tr>`}
   const html=`<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Route comparison: ${nA} vs ${nB}</title>
 <style>body{font-family:system-ui,sans-serif;max-width:960px;margin:0 auto;padding:32px;color:#15171c;font-size:13px;line-height:1.5}
 h1{font-size:22px;letter-spacing:-.02em}h2{font-size:15px;margin:28px 0 8px}.sub{color:#555b69}
@@ -874,15 +895,15 @@ td+td,th+th{text-align:right;font-family:ui-monospace,Menlo,monospace}.a{color:#
 @media print{img{break-inside:avoid}}</style></head><body>
 <h1>Route comparison</h1><p class="sub">Generated ${new Date().toLocaleDateString()}</p>
 <table>${head}<tbody><tr><td>Ride quality</td><td class="a big">${a.composite}</td><td class="b big">${b.composite}</td></tr></tbody></table>
-<p>${verdict(a,b)} Ride quality weighs curves at 50%, empty roads at 30%, and tree cover at 20%.</p>
+<p>${verdict(a,b)} ${weightsNote()}</p>
 <img src="${img('compositeChart')}" alt="Ride quality along each route">
 <h2>Curves</h2><table>${head}<tbody>${row('Distance',a.totalDist+' mi',b.totalDist+' mi')}${row('Curvature',a.curvIndex+'°/mi',b.curvIndex+'°/mi')}${row('Turns over 30° per mile',a.t30,b.t30)}${row('Curvy miles',a.pctCurvy+'%',b.pctCurvy+'%')}${row('Longest curvy run',a.longestRun+' mi',b.longestRun+' mi')}${row('Detour vs. straight line',a.circuity+'x',b.circuity+'x')}</tbody></table>
 <img src="${img('curveChart')}" alt="Curvature along each route">
-<h2>Traffic</h2><table>${head}<tbody>${row('Emptiness score',a.emptiness,b.emptiness)}${row('Daily traffic (average)',a.avgAADT.toLocaleString()+' cars',b.avgAADT.toLocaleString()+' cars')}${row('Quiet miles',quietText(a),quietText(b))}${row('Minor roads',a.pctMinor+'%',b.pctMinor+'%')}${row('Highways and US routes',a.pctMajor+'%',b.pctMajor+'%')}</tbody></table>
-<img src="${img('emptyChart')}" alt="Emptiness along each route">${noteP(notes.traffic)}
+<h2>Traffic</h2><table>${head}<tbody>${row('Quiet roads score',a.quietRoads,b.quietRoads)}${row('Daily traffic (average)',a.avgAADT.toLocaleString()+' cars',b.avgAADT.toLocaleString()+' cars')}${row('Quiet miles',quietText(a),quietText(b))}${row('Minor roads',a.pctMinor+'%',b.pctMinor+'%')}${row('Highways and US routes',a.pctMajor+'%',b.pctMajor+'%')}</tbody></table>
+<img src="${img('quietChart')}" alt="Quiet roads along each route">${noteP(notes.traffic)}
 <h2>Tree cover</h2><table>${head}<tbody>${row('Average tree cover',a.avgCanopy+'%',b.avgCanopy+'%')}</tbody></table>
 <img src="${img('canopyChart')}" alt="Tree cover along each route">${noteP(notes.canopy)}
-<h2>Per-mile data</h2><p class="sub">~ marks an estimate. Traffic shows cars per day and the year the count was taken.</p><table><thead><tr><th>Mile</th><th>A curves</th><th>A traffic</th><th>A empty</th><th>A trees</th><th>B curves</th><th>B traffic</th><th>B empty</th><th>B trees</th></tr></thead><tbody>${rows}</tbody></table>
+<h2>Per-mile data</h2><p class="sub">~ marks an estimate. Traffic shows cars per day and the year the count was taken.</p><table><thead><tr><th>Mile</th><th>A curves</th><th>A traffic</th><th>A quiet</th><th>A trees</th><th>B curves</th><th>B traffic</th><th>B quiet</th><th>B trees</th></tr></thead><tbody>${rows}</tbody></table>
 </body></html>`;
   const slug=s=>s.replace(/[^a-z0-9]+/gi,'-').replace(/^-|-$/g,'').toLowerCase().slice(0,40);
   try{await saveFile(`route-comparison-${slug(name(a))}-vs-${slug(name(b))}.html`,html)}catch(e){console.error(e)}
