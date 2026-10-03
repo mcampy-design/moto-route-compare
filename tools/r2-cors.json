@@ -1,0 +1,16 @@
+{
+  "rules": [
+    {
+      "allowed": {
+        "origins": [
+          "https://mcampy-design.github.io"
+        ],
+        "methods": [
+          "GET"
+        ],
+        "headers": []
+      },
+      "maxAgeSeconds": 86400
+    }
+  ]
+}

@@ -4,3 +4,8 @@
 .dev.vars
 node_modules/
 .claude/
+
+# HPMS raw downloads and tile build output (large, regenerable via tools/)
+tools/data/
+tools/.venv/
+tools/out/

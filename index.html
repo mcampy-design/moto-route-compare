@@ -247,8 +247,10 @@ button,summary,.drop{touch-action:manipulation}
 </section>
 </main>
 
-<footer>GPX files are read in your browser and never uploaded. Google links are routed through a private service that holds the API key, so no key is ever exposed on this page. Traffic and tree cover are estimated from road shape, not measured.</footer>
+<footer>GPX files are read in your browser and never uploaded. Google links are routed through a private service that holds the API key, so no key is ever exposed on this page. Tree cover: the route's points, minus the first and last half mile, are sent to a public USDA Forest Service map service. Traffic: the page downloads public USDOT (FHWA) traffic tiles for the areas the route crosses and matches them in your browser, so no route points are sent for traffic. Anything that can't be looked up is estimated from road shape.</footer>
 </div>
+<script src="hpms.js"></script>
+<script src="canopy.js"></script>
 <script>
 // Set this after deploying the proxy (see SETUP.md), e.g.
 // 'https://moto-route-proxy.<your-account>.workers.dev/route'
@@ -258,15 +260,11 @@ const ROUTE_PROXY_URL = 'https://moto-route-proxy.moto-trip.workers.dev/route';
 try{localStorage.removeItem('gmapsKey')}catch(e){}
 
 // ══════════════════════════════════════════════════════════════
-// TRAFFIC PROVIDER INTERFACE
-// Swap this module for TomTom/Mapbox API integration.
-// The provider must return { roadClass, estAADT, emptiness }
-// for each mile segment based on its geometry or API lookup.
+// ESTIMATES FROM ROAD SHAPE
+// Shown first, while measured data loads, and kept for any mile the
+// measured sources (FHWA HPMS traffic, USFS tree canopy) can't cover.
 // ══════════════════════════════════════════════════════════════
 const TrafficProvider = {
-  name: 'geometry',  // 'geometry' | 'tomtom' | 'mapbox'
-
-  // Geometry-based estimation (default, no API needed)
   estimateMile(avgBC, maxBC) {
     if (avgBC < 3 && maxBC < 15)  return { roadClass:'highway',   estAADT:25000 };
     if (avgBC < 6 && maxBC < 25)  return { roadClass:'primary',   estAADT:8000  };
@@ -276,64 +274,26 @@ const TrafficProvider = {
     return                          { roadClass:'track',     estAADT:50    };
   },
 
+  // Log scale: 100 at 50 cars/day, 75 at 500, 50 at 5,000, 25 at 50,000, clamped to 0-100.
   emptinessFromAADT(aadt) {
-    return Math.max(0, Math.min(100, Math.round(100 - (aadt / 250))));
+    return Math.max(0, Math.min(100, Math.round(100 - 25 * Math.log10(Math.max(aadt, 1) / 50))));
   },
-
-  // ── Future: TomTom API ──
-  // async queryTomTom(lat, lon, apiKey) { ... }
-  // ── Future: Mapbox Traffic ──
-  // async queryMapbox(lat, lon, token) { ... }
 };
 
-// ══════════════════════════════════════════════════════════════
-// CANOPY PROVIDER INTERFACE
-// Swap this for NLCD Tree Canopy WCS or aerial imagery ML.
-// Returns { canopyPct } - percent tree cover within ~100m of road.
-// ══════════════════════════════════════════════════════════════
 const CanopyProvider = {
-  name: 'geometry',  // 'geometry' | 'nlcd' | 'google-eie'
-
-  // Geometry-based proxy (default):
-  // In the KY/TN/Appalachian corridor, canopy correlates with
-  // road class and curviness. Minor mountain roads run through
-  // forest; highways and farmland corridors are open.
+  // In the KY/TN/Appalachian corridor, canopy correlates with road class and curviness.
   estimateMile(avgBC, maxBC, roadClass) {
-    // Road class is the primary signal
     const classBase = {highway:10, primary:20, secondary:35, tertiary:50, minor:70, track:85};
     let base = classBase[roadClass] || 40;
-    // Curviness boost: very winding roads in this region are typically
-    // gorge/ridge roads with heavy canopy
     if (avgBC > 25) base = Math.min(95, base + 15);
     else if (avgBC > 15) base = Math.min(90, base + 5);
-    // Straight low-class roads could be farmland - slight penalty
     if (avgBC < 5 && (roadClass === 'tertiary' || roadClass === 'secondary')) base -= 10;
     return { canopyPct: Math.max(0, Math.min(100, Math.round(base))) };
   },
-
-  // ── Future: NLCD Tree Canopy Cover (USGS/MRLC WCS) ──
-  // The definitive data source for automated canopy analysis.
-  // 30m resolution, entire US, percent canopy per pixel.
-  // Buffer route centerline by 100m, sample raster, average.
-  //
-  // async queryNLCD(lat, lon) {
-  //   const bbox = `${lon-0.001},${lat-0.001},${lon+0.001},${lat+0.001}`;
-  //   const url = `https://www.mrlc.gov/geoserver/mrlc_download/wcs?`
-  //     + `service=WCS&version=2.0.1&request=GetCoverage`
-  //     + `&CoverageId=nlcd_tcc_conus_2021_v2021-4`
-  //     + `&subset=Lat(${lat-0.001},${lat+0.001})`
-  //     + `&subset=Long(${lon-0.001},${lon+0.001})`
-  //     + `&format=application/json`;
-  //   const res = await fetch(url);
-  //   // Parse coverage values, average the pixels
-  //   return { canopyPct: averagedValue };
-  // },
-
-  // ── Future: Google Environmental Insights Explorer ──
-  // Municipal-level canopy data. Good for urban sections,
-  // not available for rural county roads.
-  // async queryGoogleEIE(lat, lon) { ... }
 };
+
+// FHWA functional system (1 = interstate ... 7 = local) -> the road classes the page reports
+const CLASS_OF_FSYSTEM={1:'highway',2:'highway',3:'primary',4:'secondary',5:'tertiary',6:'minor',7:'track'};
 
 
 function parseGPX(xml){
@@ -362,8 +322,6 @@ function analyze(rawPts){
   const deltas=[];for(let i=1;i<bearings.length;i++){let d=bearings[i]-bearings[i-1];d=((d+180)%360+360)%360-180;deltas.push(Math.abs(d))}
   const totalAbs=deltas.reduce((s,v)=>s+v,0),ppm=10;
   const milesData=[],nm=Math.floor(td);let curvyMi=0,straightMi=0;const runs=[];let run=0;
-  const classCounts={highway:0,primary:0,secondary:0,tertiary:0,minor:0,track:0};
-  let aadtSum=0,emptySum=0;
 
   for(let m=0;m<nm;m++){
     const ch=deltas.slice(m*ppm,(m+1)*ppm);if(!ch.length)continue;
@@ -371,13 +329,9 @@ function analyze(rawPts){
     const mx=Math.max(...ch);
     const mi=Math.min(m*ppm+5,pts.length-1);
 
-    // Traffic estimation via provider
+    // Estimates first; measured traffic and tree cover replace them mile by mile as they arrive
     const traffic=TrafficProvider.estimateMile(avg,mx);
     const emptiness=TrafficProvider.emptinessFromAADT(traffic.estAADT);
-    classCounts[traffic.roadClass]=(classCounts[traffic.roadClass]||0)+1;
-    aadtSum+=traffic.estAADT; emptySum+=emptiness;
-
-    // Canopy estimation via provider
     const canopy=CanopyProvider.estimateMile(avg,mx,traffic.roadClass);
 
     // Per-mile composite: curviness normalized to 0-100, then weighted.
@@ -386,37 +340,179 @@ function analyze(rawPts){
     const degPerMi=avg*ppm;
     const curvScore=Math.min(100, Math.round(degPerMi / 1.5));
     milesData.push({mile:m,avg:Math.round(degPerMi),lat:pts[mi][0],lon:pts[mi][1],
-      roadClass:traffic.roadClass,estAADT:traffic.estAADT,emptiness,canopyPct:canopy.canopyPct,
+      roadClass:traffic.roadClass,fsystem:null,aadt:traffic.estAADT,aadtSrc:'est',aadtYear:null,emptiness,
+      canopyPct:canopy.canopyPct,canopySrc:'est',
       curvScore, composite:Math.round(curvScore*0.5 + emptiness*0.3 + canopy.canopyPct*0.2)});
     if(avg>20)curvyMi++;else if(avg<8)straightMi++;
     if(avg>15){run++}else{if(run)runs.push(run);run=0}
   }
   if(run)runs.push(run);runs.sort((a,b)=>b-a);
   const profile=[];for(let m=0;m<nm;m+=5){const ch=deltas.slice(m*ppm,Math.min((m+5)*ppm,deltas.length));if(ch.length)profile.push({mile:m,avg:Math.round(ch.reduce((s,v)=>s+v,0)/ch.length*ppm)})}
-  // Emptiness profile per 5mi
-  const emptyProfile=[];for(let m=0;m<nm;m+=5){const seg=milesData.filter(d=>d.mile>=m&&d.mile<m+5);if(seg.length)emptyProfile.push({mile:m,avg:Math.round(mean(seg.map(s=>s.emptiness)))})}
-  // Canopy profile per 5mi
-  const canopyProfile=[];for(let m=0;m<nm;m+=5){const seg=milesData.filter(d=>d.mile>=m&&d.mile<m+5);if(seg.length)canopyProfile.push({mile:m,avg:Math.round(mean(seg.map(s=>s.canopyPct)))})}
-  // Composite profile per 5mi
-  const compositeProfile=[];for(let m=0;m<nm;m+=5){const seg=milesData.filter(d=>d.mile>=m&&d.mile<m+5);if(seg.length)compositeProfile.push({mile:m,avg:Math.round(mean(seg.map(s=>s.composite)))})}
-
   const curvScore=Math.min(100,Math.round((totalAbs/td)/1.5));
-  const empt=Math.round(emptySum/nm);
-  const canopyAvg=Math.round(mean(milesData.map(d=>d.canopyPct)));
-  const composite=Math.round(curvScore*0.5 + empt*0.3 + canopyAvg*0.2);
 
-  return{pts,milesData,profile,emptyProfile,canopyProfile,compositeProfile,totalDist:Math.round(td*10)/10,crow:Math.round(crow*10)/10,
+  const a={pts,milesData,profile,totalDist:Math.round(td*10)/10,crow:Math.round(crow*10)/10,
     circuity:Math.round(td/crow*1000)/1000,curvIndex:Math.round(totalAbs/td*10)/10,
     t30:Math.round(deltas.filter(d=>d>30).length/td*100)/100,
     t60:Math.round(deltas.filter(d=>d>60).length/td*100)/100,
     pctCurvy:Math.round(1000*curvyMi/td)/10,pctStraight:Math.round(1000*straightMi/td)/10,
-    longestRun:runs[0]||0,top5:runs.slice(0,5),
-    classCounts,avgAADT:Math.round(aadtSum/nm),emptiness:empt,
-    avgCanopy:canopyAvg,curvScore,composite,
-    pctMinor:Math.round(1000*((classCounts.minor||0)+(classCounts.track||0))/nm)/10,
-    pctMajor:Math.round(1000*((classCounts.highway||0)+(classCounts.primary||0))/nm)/10,
-    trafficSource:TrafficProvider.name,canopySource:CanopyProvider.name};
+    longestRun:runs[0]||0,top5:runs.slice(0,5),curvScore};
+  aggregate(a);
+  return a;
 }
+
+// Everything derived from the per-mile traffic and tree cover: reruns whenever measured data arrives
+function aggregate(a){
+  const md=a.milesData,nm=md.length||1;
+  const classCounts={highway:0,primary:0,secondary:0,tertiary:0,minor:0,track:0};
+  for(const d of md)classCounts[d.roadClass]=(classCounts[d.roadClass]||0)+1;
+  const per5=f=>{const out=[];for(let m=0;m<md.length;m+=5){const seg=md.filter(d=>d.mile>=m&&d.mile<m+5);if(seg.length)out.push({mile:m,avg:Math.round(mean(seg.map(f)))})}return out};
+  a.emptyProfile=per5(d=>d.emptiness);
+  a.canopyProfile=per5(d=>d.canopyPct);
+  a.compositeProfile=per5(d=>d.composite);
+  a.classCounts=classCounts;
+  a.avgAADT=Math.round(mean(md.map(d=>d.aadt)));
+  a.emptiness=Math.round(mean(md.map(d=>d.emptiness)));
+  a.avgCanopy=Math.round(mean(md.map(d=>d.canopyPct)));
+  a.composite=Math.round(a.curvScore*0.5 + a.emptiness*0.3 + a.avgCanopy*0.2);
+  a.pctMinor=Math.round(1000*((classCounts.minor||0)+(classCounts.track||0))/nm)/10;
+  a.pctMajor=Math.round(1000*((classCounts.highway||0)+(classCounts.primary||0))/nm)/10;
+  const share=f=>md.filter(f).length/nm;
+  a.cov={canopy:share(d=>d.canopySrc==='nlcd'),hpms:share(d=>d.aadtSrc==='hpms'),cls:share(d=>d.aadtSrc==='class'),est:share(d=>d.aadtSrc==='est')};
+  const yrs=md.filter(d=>d.aadtYear).map(d=>d.aadtYear);
+  a.aadtYears=yrs.length?[Math.min(...yrs),Math.max(...yrs)]:null;
+}
+
+// ══════════════════════════════════════════════════════════════
+// MEASURED DATA: tree canopy (USFS) and traffic (FHWA HPMS tiles)
+// Runs after the curve results are on screen, in 30-mile sections,
+// two at a time, and fills the numbers and charts in as each lands.
+// ══════════════════════════════════════════════════════════════
+const TILE_BASE='https://pub-c7398e8f9aef4a0a9a7ae6ee5e62c921.r2.dev/';
+const TRIM_POINTS=5; // 0.5 mi at 0.1 mi per point: route ends are never looked up
+const MAX_SECTIONS_AT_ONCE=2;
+
+// Rough outline of New Jersey [lon,lat]. The HPMS release is missing large parts of NJ, so miles
+// inside it are estimated; the outline only needs to be good to about a kilometre.
+const NJ_OUTLINE=[[-74.95,38.88],[-75.50,39.40],[-75.55,39.62],[-75.47,39.72],[-75.12,39.95],[-74.85,40.07],[-74.77,40.22],[-74.94,40.37],[-75.06,40.53],[-75.19,40.69],[-75.08,40.83],[-75.14,40.97],[-74.80,41.32],[-74.69,41.36],[-74.24,41.14],[-73.89,41.00],[-73.95,40.85],[-74.04,40.70],[-74.20,40.60],[-74.25,40.49],[-73.98,40.45],[-73.85,40.0],[-73.95,39.5],[-74.50,38.85]];
+function inNJ(lat,lon){
+  let inside=false;
+  for(let i=0,j=NJ_OUTLINE.length-1;i<NJ_OUTLINE.length;j=i++){
+    const [xi,yi]=NJ_OUTLINE[i],[xj,yj]=NJ_OUTLINE[j];
+    if((yi>lat)!==(yj>lat)&&lon<(xj-xi)*(lat-yi)/(yj-yi)+xi)inside=!inside;
+  }
+  return inside;
+}
+
+// Tiles are fetched once per page visit; the service worker keeps them across visits.
+// A missing tile (404) just means no mapped roads there. Anything else is retried once.
+const tileMemo=new Map();
+function loadTile(row,col){
+  const key=Hpms.tileKey(row,col);
+  if(!tileMemo.has(key)){
+    const p=(async()=>{
+      for(let attempt=0;;attempt++){
+        try{
+          const res=await fetch(TILE_BASE+key);
+          if(res.status===404)return null;
+          if(!res.ok)throw new Error('tile '+res.status);
+          return await res.arrayBuffer();
+        }catch(e){if(attempt)throw e}
+      }
+    })();
+    tileMemo.set(key,p);
+    p.catch(()=>tileMemo.delete(key));
+  }
+  return tileMemo.get(key);
+}
+
+const pump={queue:[],running:0};
+function schedule(task){
+  pump.queue.push(task);drain();
+}
+function drain(){
+  while(pump.running<MAX_SECTIONS_AT_ONCE&&pump.queue.length){
+    const task=pump.queue.shift();pump.running++;
+    task().catch(()=>{}).finally(()=>{pump.running--;drain()});
+  }
+}
+
+let refreshTimer=null;
+function queueRefresh(){
+  if(refreshTimer)return;
+  refreshTimer=setTimeout(()=>{refreshTimer=null;if(routeA&&routeB)render({fresh:false})},300);
+}
+
+function startEnrichment(a){
+  const last=a.pts.length-1;
+  const pts=a.pts.map(([lat,lon],idx)=>({lat,lon,idx})).filter(p=>p.idx>=TRIM_POINTS&&p.idx<=last-TRIM_POINTS);
+  a.nj=a.pts.some(([lat,lon])=>inNJ(lat,lon));
+  const size=Canopy.CHUNK_MILES*10,sections=new Map();
+  for(const p of pts){const k=Math.floor(p.idx/size);if(!sections.has(k))sections.set(k,[]);sections.get(k).push(p)}
+  const list=[...sections.values()];
+  const e=a.enrich={total:list.length,done:0,canopyFailed:0,tileFailed:0,canopyYear:null,trafficYear:null};
+  const byMile=new Map(a.milesData.map(d=>[d.mile,d]));
+  for(const section of list)schedule(async()=>{
+    const [c,t]=await Promise.all([
+      Canopy.measureChunk(section).catch(()=>({miles:[],year:null,failed:true})),
+      Hpms.matchRoute(section,loadTile,{exclude:p=>inNJ(p.lat,p.lon)}).catch(()=>({miles:[],year:null,failedTiles:1}))]);
+    if(routeA!==a&&routeB!==a)return; // the route was replaced or cleared while this ran
+    const touched=new Set();
+    for(const m of c.miles){const d=byMile.get(m.mile);if(d&&m.canopyPct!==null){d.canopyPct=m.canopyPct;d.canopySrc='nlcd';touched.add(d)}}
+    for(const m of t.miles){const d=byMile.get(m.mile);if(!d||m.aadtSrc==='none')continue;
+      Object.assign(d,{aadt:m.aadt,aadtSrc:m.aadtSrc,aadtYear:m.aadtYear,fsystem:m.fsystem});
+      if(m.fsystem)d.roadClass=CLASS_OF_FSYSTEM[m.fsystem]||d.roadClass;
+      touched.add(d)}
+    for(const d of touched){d.emptiness=TrafficProvider.emptinessFromAADT(d.aadt);d.composite=Math.round(d.curvScore*0.5+d.emptiness*0.3+d.canopyPct*0.2)}
+    if(c.failed)e.canopyFailed++;
+    if(c.year)e.canopyYear=c.year;
+    if(t.year)e.trafficYear=t.year;
+    e.tileFailed+=t.failedTiles||0;
+    e.done++;
+    aggregate(a);queueRefresh();
+  });
+}
+
+const pctText=x=>Math.round(x*100)+'%';
+const NJ_LINE="New Jersey's traffic data took the wrong exit on the Turnpike. Miles there are estimated.";
+
+// Source and coverage lines for the Traffic and Tree cover panels (plain text, shared with the downloaded report)
+function dataNotes(){
+  const rts=[['A',routeA],['B',routeB]],years=k=>[...new Set(rts.map(([,r])=>r.enrich&&r.enrich[k]).filter(Boolean))].join(', ');
+  const busy=r=>r.enrich&&r.enrich.done<r.enrich.total;
+  const traffic=[],canopy=[];
+  if(rts.some(([,r])=>busy(r))){
+    traffic.push('Estimated from road shape until measured data arrives.');canopy.push('Estimated from road shape until measured data arrives.');
+  }else{
+    const ty=years('trafficYear'),yr=[routeA,routeB].map(r=>r.aadtYears).filter(Boolean);
+    traffic.push('Source: FHWA HPMS'+(ty?' '+ty:'')+(yr.length?'. Counts date from '+Math.min(...yr.map(y=>y[0]))+' to '+Math.max(...yr.map(y=>y[1])):'')+'.');
+    const cy=years('canopyYear');
+    canopy.push('Source: USFS NLCD Tree Canopy Cover'+(cy?' '+cy:'')+'.');
+  }
+  for(const [L,r] of rts){
+    const e=r.enrich;if(!e||busy(r))continue;
+    let t;
+    if(e.total&&!r.nj&&r.cov.hpms+r.cov.cls===0)t=e.tileFailed?'Traffic data could not be loaded. All miles are estimated from road shape.':'No traffic data was found along this route. All miles are estimated from road shape.';
+    else{
+      t='Measured for '+pctText(r.cov.hpms)+' of miles.';
+      if(r.cov.cls)t+=' '+pctText(r.cov.cls)+' use a typical value for the road class.';
+      if(r.cov.est)t+=' '+pctText(r.cov.est)+' are estimated from road shape.';
+    }
+    if(r.nj)t+=' '+NJ_LINE;
+    traffic.push(L+': '+t);
+    let c;
+    if(e.total&&e.canopyFailed===e.total)c='Tree cover could not be measured (the USFS service did not respond). All miles are estimated from road shape.';
+    else{
+      c='Measured for '+pctText(r.cov.canopy)+' of miles.';
+      if(r.cov.canopy<1)c+=' The rest are estimated from road shape.';
+    }
+    canopy.push(L+': '+c);
+  }
+  return {traffic,canopy};
+}
+
+// Cells for the per-mile table: ~ marks an estimate
+const trafficCell=d=>d.aadtSrc==='hpms'?d.aadt.toLocaleString()+' ('+(d.aadtYear||'year unknown')+')':'~'+d.aadt.toLocaleString()+(d.aadtSrc==='class'?' (typical)':' (est.)');
+const treeCell=d=>(d.canopySrc==='nlcd'?'':'~')+d.canopyPct+'%';
 
 
 let routeA=null,routeB=null;
@@ -478,6 +574,7 @@ function ingest(pts,label,slot,link=null){
   if(!pts||pts.length<10){$('err'+S).textContent='Could not read a route from that. Found '+(pts?pts.length:0)+' points.';setStatus(slot,EMPTY_STATUS);return}
   const analysis=analyze(pts);analysis.filename=label;analysis.link=link;
   if(slot==='a')routeA=analysis;else routeB=analysis;
+  startEnrichment(analysis);
   setStatus(slot,`<p class="loaded" title="${esc(label)}"><span class="nm">${esc(label)}</span><span class="num">${Math.round(analysis.totalDist)} mi</span></p>`);
   $('route'+S).classList.add('has-'+slot);
   syncState();
@@ -516,7 +613,7 @@ function updateReset(){
 let loadGen=0;
 
 function startOver(){
-  loadGen++;routeA=routeB=null;$('shareErr').textContent='';
+  loadGen++;routeA=routeB=null;pump.queue.length=0;$('shareErr').textContent='';
   for(const slot of ['a','b']){const S=slot.toUpperCase();
     $('link'+S).value='';$('err'+S).textContent='';setStatus(slot,EMPTY_STATUS);$('route'+S).classList.remove('has-'+slot)}
   try{localStorage.removeItem(LINKS_KEY)}catch(e){}
@@ -616,10 +713,14 @@ function metricRows(rows){
   return h+'</div>';
 }
 
-function render(){
+function render({fresh=true}={}){
   const a=routeA,b=routeB;
   $('emptyState').hidden=true;
-  const rep=$('report');rep.hidden=false;rep.classList.remove('reveal');void rep.offsetWidth;rep.classList.add('reveal');
+  const rep=$('report');rep.hidden=false;
+  const wasOpen=!fresh&&rep.querySelector('details')&&rep.querySelector('details').open;
+  if(fresh){rep.classList.remove('reveal');void rep.offsetWidth;rep.classList.add('reveal')}
+  const notes=dataNotes(),noteHtml=l=>l.map(t=>`<p class="note">${esc(t)}</p>`).join('');
+  const sections=[a,b].reduce((n,r)=>n+(r.enrich?r.enrich.total:0),0),done=[a,b].reduce((n,r)=>n+(r.enrich?r.enrich.done:0),0);
   rep.innerHTML=`
   <div class="res-head"><h2>Comparison</h2><div class="res-actions">${a.link&&b.link?'<button class="btn" type="button" id="shareBtn">Copy comparison link</button>':''}<button class="btn" type="button" id="exportBtn">Download report</button></div></div>
   <div class="scores">
@@ -628,6 +729,7 @@ function render(){
   </div>
   <p class="verdict">${verdict(a,b)}</p>
   <p class="weights">Ride quality weighs curves at 50%, empty roads at 30%, and tree cover at 20%.</p>
+  ${done<sections?`<p class="note" role="status">Looking up measured traffic and tree cover: ${done} of ${sections} sections done. Numbers below update as they arrive.</p>`:''}
   <div class="panel overall"><h3>Ride quality along the route</h3><canvas class="chart" id="compositeChart"></canvas></div>
   <div class="groups">
     <div class="panel"><h3>Curves</h3>${metricRows([
@@ -640,19 +742,19 @@ function render(){
       <canvas class="chart" id="curveChart"></canvas></div>
     <div class="panel"><h3>Traffic</h3>${metricRows([
       ['Emptiness score',a.emptiness,b.emptiness,a.emptiness,b.emptiness,true],
-      ['Est. daily traffic',a.avgAADT,b.avgAADT,a.avgAADT.toLocaleString()+' cars',b.avgAADT.toLocaleString()+' cars',false],
+      ['Daily traffic (average)',a.avgAADT,b.avgAADT,a.avgAADT.toLocaleString()+' cars',b.avgAADT.toLocaleString()+' cars',false],
       ['Minor roads',a.pctMinor,b.pctMinor,a.pctMinor+'%',b.pctMinor+'%',true],
       ['Highways and US routes',a.pctMajor,b.pctMajor,a.pctMajor+'%',b.pctMajor+'%',false]])}
-      <canvas class="chart" id="emptyChart"></canvas><p class="note">Estimated from road shape.</p></div>
+      <canvas class="chart" id="emptyChart"></canvas>${noteHtml(notes.traffic)}</div>
     <div class="panel"><h3>Tree cover</h3>${metricRows([
       ['Average tree cover',a.avgCanopy,b.avgCanopy,a.avgCanopy+'%',b.avgCanopy+'%',true]])}
-      <canvas class="chart" id="canopyChart"></canvas><p class="note">Estimated from road shape.</p></div>
+      <canvas class="chart" id="canopyChart"></canvas>${noteHtml(notes.canopy)}</div>
   </div>
-  <details><summary>Per-mile data</summary><div class="table-wrap" id="tableWrap"></div></details>`;
+  <details${wasOpen?' open':''}><summary>Per-mile data</summary><div class="table-wrap" id="tableWrap"></div><p class="note">~ marks an estimate. Traffic shows cars per day and the year the count was taken.</p></details>`;
   $('exportBtn').addEventListener('click',exportReport);
   if($('shareBtn'))$('shareBtn').addEventListener('click',e=>copyComparisonLink(e.currentTarget));
   renderCharts();renderTable();
-  rep.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'start'});
+  if(fresh)rep.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'start'});
 }
 
 // tok reads a color token (css for the page's current mode); bg fills the chart, or leaves it transparent when null
@@ -706,11 +808,11 @@ function reportCharts(){
 function renderTable(){
   const n=Math.max(routeA.milesData.length,routeB.milesData.length);
   const aM={},bM={};routeA.milesData.forEach(d=>aM[d.mile]=d);routeB.milesData.forEach(d=>bM[d.mile]=d);
-  let h='<table><thead><tr><th rowspan="2">Mile</th><th class="grp" colspan="3"><span class="key a"></span>A</th><th class="grp" colspan="3"><span class="key b"></span>B</th></tr>'
-    +'<tr><th>Curves</th><th>Empty</th><th>Trees</th><th>Curves</th><th>Empty</th><th>Trees</th></tr></thead><tbody>';
+  let h='<table><thead><tr><th rowspan="2">Mile</th><th class="grp" colspan="4"><span class="key a"></span>A</th><th class="grp" colspan="4"><span class="key b"></span>B</th></tr>'
+    +'<tr><th>Curves</th><th>Traffic</th><th>Empty</th><th>Trees</th><th>Curves</th><th>Traffic</th><th>Empty</th><th>Trees</th></tr></thead><tbody>';
   const c=(d,f)=>d?f(d):'';
   for(let m=0;m<n;m++){const a=aM[m],b=bM[m];
-    h+=`<tr><td>${m}</td><td>${c(a,d=>d.avg+'°')}</td><td>${c(a,d=>d.emptiness)}</td><td>${c(a,d=>d.canopyPct+'%')}</td><td>${c(b,d=>d.avg+'°')}</td><td>${c(b,d=>d.emptiness)}</td><td>${c(b,d=>d.canopyPct+'%')}</td></tr>`}
+    h+=`<tr><td>${m}</td><td>${c(a,d=>d.avg+'°')}</td><td>${c(a,trafficCell)}</td><td>${c(a,d=>d.emptiness)}</td><td>${c(a,treeCell)}</td><td>${c(b,d=>d.avg+'°')}</td><td>${c(b,trafficCell)}</td><td>${c(b,d=>d.emptiness)}</td><td>${c(b,treeCell)}</td></tr>`}
   $('tableWrap').innerHTML=h+'</tbody></table>';
 }
 
@@ -745,12 +847,12 @@ async function saveFile(filename,data){
 
 async function exportReport(){
   const a=routeA,b=routeB,nA=esc(name(a)),nB=esc(name(b));
-  const charts=reportCharts(),img=id=>charts[id];
+  const charts=reportCharts(),img=id=>charts[id],notes=dataNotes(),noteP=l=>l.map(t=>`<p class="sub">${esc(t)}</p>`).join('');
   const row=(l,va,vb)=>`<tr><td>${l}</td><td class="a">${va}</td><td class="b">${vb}</td></tr>`;
   const head=`<thead><tr><th></th><th class="a">A: ${nA}</th><th class="b">B: ${nB}</th></tr></thead>`;
   const aM={},bM={};a.milesData.forEach(d=>aM[d.mile]=d);b.milesData.forEach(d=>bM[d.mile]=d);
   let rows='';for(let m=0;m<Math.max(a.milesData.length,b.milesData.length);m++){const x=aM[m],y=bM[m];
-    rows+=`<tr><td>${m}</td><td>${x?x.avg+'°':''}</td><td>${x?x.emptiness:''}</td><td>${x?x.canopyPct+'%':''}</td><td>${y?y.avg+'°':''}</td><td>${y?y.emptiness:''}</td><td>${y?y.canopyPct+'%':''}</td></tr>`}
+    rows+=`<tr><td>${m}</td><td>${x?x.avg+'°':''}</td><td>${x?trafficCell(x):''}</td><td>${x?x.emptiness:''}</td><td>${x?treeCell(x):''}</td><td>${y?y.avg+'°':''}</td><td>${y?trafficCell(y):''}</td><td>${y?y.emptiness:''}</td><td>${y?treeCell(y):''}</td></tr>`}
   const html=`<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Route comparison: ${nA} vs ${nB}</title>
 <style>body{font-family:system-ui,sans-serif;max-width:960px;margin:0 auto;padding:32px;color:#15171c;font-size:13px;line-height:1.5}
 h1{font-size:22px;letter-spacing:-.02em}h2{font-size:15px;margin:28px 0 8px}.sub{color:#555b69}
@@ -764,12 +866,11 @@ td+td,th+th{text-align:right;font-family:ui-monospace,Menlo,monospace}.a{color:#
 <img src="${img('compositeChart')}" alt="Ride quality along each route">
 <h2>Curves</h2><table>${head}<tbody>${row('Distance',a.totalDist+' mi',b.totalDist+' mi')}${row('Curvature',a.curvIndex+'°/mi',b.curvIndex+'°/mi')}${row('Turns over 30° per mile',a.t30,b.t30)}${row('Curvy miles',a.pctCurvy+'%',b.pctCurvy+'%')}${row('Longest curvy run',a.longestRun+' mi',b.longestRun+' mi')}${row('Detour vs. straight line',a.circuity+'x',b.circuity+'x')}</tbody></table>
 <img src="${img('curveChart')}" alt="Curvature along each route">
-<h2>Traffic (estimated)</h2><table>${head}<tbody>${row('Emptiness score',a.emptiness,b.emptiness)}${row('Est. daily traffic',a.avgAADT.toLocaleString()+' cars',b.avgAADT.toLocaleString()+' cars')}${row('Minor roads',a.pctMinor+'%',b.pctMinor+'%')}${row('Highways and US routes',a.pctMajor+'%',b.pctMajor+'%')}</tbody></table>
-<img src="${img('emptyChart')}" alt="Emptiness along each route">
-<h2>Tree cover (estimated)</h2><table>${head}<tbody>${row('Average tree cover',a.avgCanopy+'%',b.avgCanopy+'%')}</tbody></table>
-<img src="${img('canopyChart')}" alt="Tree cover along each route">
-<p class="sub">Traffic and tree cover are estimated from road shape, not measured.</p>
-<h2>Per-mile data</h2><table><thead><tr><th>Mile</th><th>A curves</th><th>A empty</th><th>A trees</th><th>B curves</th><th>B empty</th><th>B trees</th></tr></thead><tbody>${rows}</tbody></table>
+<h2>Traffic</h2><table>${head}<tbody>${row('Emptiness score',a.emptiness,b.emptiness)}${row('Daily traffic (average)',a.avgAADT.toLocaleString()+' cars',b.avgAADT.toLocaleString()+' cars')}${row('Minor roads',a.pctMinor+'%',b.pctMinor+'%')}${row('Highways and US routes',a.pctMajor+'%',b.pctMajor+'%')}</tbody></table>
+<img src="${img('emptyChart')}" alt="Emptiness along each route">${noteP(notes.traffic)}
+<h2>Tree cover</h2><table>${head}<tbody>${row('Average tree cover',a.avgCanopy+'%',b.avgCanopy+'%')}</tbody></table>
+<img src="${img('canopyChart')}" alt="Tree cover along each route">${noteP(notes.canopy)}
+<h2>Per-mile data</h2><p class="sub">~ marks an estimate. Traffic shows cars per day and the year the count was taken.</p><table><thead><tr><th>Mile</th><th>A curves</th><th>A traffic</th><th>A empty</th><th>A trees</th><th>B curves</th><th>B traffic</th><th>B empty</th><th>B trees</th></tr></thead><tbody>${rows}</tbody></table>
 </body></html>`;
   const slug=s=>s.replace(/[^a-z0-9]+/gi,'-').replace(/^-|-$/g,'').toLowerCase().slice(0,40);
   try{await saveFile(`route-comparison-${slug(name(a))}-vs-${slug(name(b))}.html`,html)}catch(e){console.error(e)}
