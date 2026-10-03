@@ -293,6 +293,7 @@ const CanopyProvider = {
 };
 
 // FHWA functional system (1 = interstate ... 7 = local) -> the road classes the page reports
+const QUIET_AADT=1000; // cars a day; a mile below this counts as quiet
 const CLASS_OF_FSYSTEM={1:'highway',2:'highway',3:'primary',4:'secondary',5:'tertiary',6:'minor',7:'track'};
 
 
@@ -376,6 +377,10 @@ function aggregate(a){
   a.composite=Math.round(a.curvScore*0.5 + a.emptiness*0.3 + a.avgCanopy*0.2);
   a.pctMinor=Math.round(1000*((classCounts.minor||0)+(classCounts.track||0))/nm)/10;
   a.pctMajor=Math.round(1000*((classCounts.highway||0)+(classCounts.primary||0))/nm)/10;
+  // Quiet miles: of the miles with a count (measured, or typical for the road class), the share under 1,000 cars a day.
+  // Miles estimated from road shape are left out, so the figure only reflects real data. null when there are none.
+  const counted=md.filter(d=>d.aadtSrc==='hpms'||d.aadtSrc==='class');
+  a.quiet=counted.length?Math.round(100*counted.filter(d=>d.aadt<QUIET_AADT).length/counted.length):null;
   const share=f=>md.filter(f).length/nm;
   a.cov={canopy:share(d=>d.canopySrc==='nlcd'),hpms:share(d=>d.aadtSrc==='hpms'),cls:share(d=>d.aadtSrc==='class'),est:share(d=>d.aadtSrc==='est')};
   const yrs=md.filter(d=>d.aadtYear).map(d=>d.aadtYear);
@@ -472,7 +477,9 @@ function startEnrichment(a){
   });
 }
 
-const pctText=x=>Math.round(x*100)+'%';
+// Shares under half a percent would round to 0%, which reads as none: say "under 1%" instead
+const pctText=x=>x>0&&x<0.005?'under 1%':Math.round(x*100)+'%';
+const sentence=t=>t.charAt(0).toUpperCase()+t.slice(1);
 const NJ_LINE="New Jersey's traffic data took the wrong exit on the Turnpike. Miles there are estimated.";
 
 // Source and coverage lines for the Traffic and Tree cover panels (plain text, shared with the downloaded report)
@@ -484,6 +491,7 @@ function dataNotes(){
     traffic.push('Estimated from road shape until measured data arrives.');canopy.push('Estimated from road shape until measured data arrives.');
   }else{
     const ty=years('trafficYear'),yr=[routeA,routeB].map(r=>r.aadtYears).filter(Boolean);
+    traffic.push('Quiet miles: the share of miles with a measured or typical count that are under 1,000 cars a day.');
     traffic.push('Source: FHWA HPMS'+(ty?' '+ty:'')+(yr.length?'. Counts date from '+Math.min(...yr.map(y=>y[0]))+' to '+Math.max(...yr.map(y=>y[1])):'')+'.');
     const cy=years('canopyYear');
     canopy.push('Source: USFS NLCD Tree Canopy Cover'+(cy?' '+cy:'')+'.');
@@ -494,8 +502,8 @@ function dataNotes(){
     if(e.total&&!r.nj&&r.cov.hpms+r.cov.cls===0)t=e.tileFailed?'Traffic data could not be loaded. All miles are estimated from road shape.':'No traffic data was found along this route. All miles are estimated from road shape.';
     else{
       t='Measured for '+pctText(r.cov.hpms)+' of miles.';
-      if(r.cov.cls)t+=' '+pctText(r.cov.cls)+' use a typical value for the road class.';
-      if(r.cov.est)t+=' '+pctText(r.cov.est)+' are estimated from road shape.';
+      if(r.cov.cls)t+=' '+sentence(pctText(r.cov.cls))+' use a typical value for the road class.';
+      if(r.cov.est)t+=' '+sentence(pctText(r.cov.est))+' are estimated from road shape.';
     }
     if(r.nj)t+=' '+NJ_LINE;
     traffic.push(L+': '+t);
@@ -702,6 +710,9 @@ function verdict(a,b){
   return `${esc(name(w))} scores ${Math.abs(d)} points higher, mostly from ${parts[0][0]}.`;
 }
 
+// "-" until measured data arrives (or when a route has no counted miles)
+const quietText=r=>r.quiet===null?'-':r.quiet+'%';
+
 function metricRows(rows){
   // rows: [label, aVal, bVal, aDisplay, bDisplay, higherIsBetter|null]
   let h=`<div class="metrics"><div class="h">Metric</div><div class="h"><span class="key a"></span>A</div><div class="h"><span class="key b"></span>B</div>`;
@@ -743,6 +754,7 @@ function render({fresh=true}={}){
     <div class="panel"><h3>Traffic</h3>${metricRows([
       ['Emptiness score',a.emptiness,b.emptiness,a.emptiness,b.emptiness,true],
       ['Daily traffic (average)',a.avgAADT,b.avgAADT,a.avgAADT.toLocaleString()+' cars',b.avgAADT.toLocaleString()+' cars',false],
+      ['Quiet miles',a.quiet,b.quiet,quietText(a),quietText(b),a.quiet!==null&&b.quiet!==null?true:null],
       ['Minor roads',a.pctMinor,b.pctMinor,a.pctMinor+'%',b.pctMinor+'%',true],
       ['Highways and US routes',a.pctMajor,b.pctMajor,a.pctMajor+'%',b.pctMajor+'%',false]])}
       <canvas class="chart" id="emptyChart"></canvas>${noteHtml(notes.traffic)}</div>
@@ -866,7 +878,7 @@ td+td,th+th{text-align:right;font-family:ui-monospace,Menlo,monospace}.a{color:#
 <img src="${img('compositeChart')}" alt="Ride quality along each route">
 <h2>Curves</h2><table>${head}<tbody>${row('Distance',a.totalDist+' mi',b.totalDist+' mi')}${row('Curvature',a.curvIndex+'°/mi',b.curvIndex+'°/mi')}${row('Turns over 30° per mile',a.t30,b.t30)}${row('Curvy miles',a.pctCurvy+'%',b.pctCurvy+'%')}${row('Longest curvy run',a.longestRun+' mi',b.longestRun+' mi')}${row('Detour vs. straight line',a.circuity+'x',b.circuity+'x')}</tbody></table>
 <img src="${img('curveChart')}" alt="Curvature along each route">
-<h2>Traffic</h2><table>${head}<tbody>${row('Emptiness score',a.emptiness,b.emptiness)}${row('Daily traffic (average)',a.avgAADT.toLocaleString()+' cars',b.avgAADT.toLocaleString()+' cars')}${row('Minor roads',a.pctMinor+'%',b.pctMinor+'%')}${row('Highways and US routes',a.pctMajor+'%',b.pctMajor+'%')}</tbody></table>
+<h2>Traffic</h2><table>${head}<tbody>${row('Emptiness score',a.emptiness,b.emptiness)}${row('Daily traffic (average)',a.avgAADT.toLocaleString()+' cars',b.avgAADT.toLocaleString()+' cars')}${row('Quiet miles',quietText(a),quietText(b))}${row('Minor roads',a.pctMinor+'%',b.pctMinor+'%')}${row('Highways and US routes',a.pctMajor+'%',b.pctMajor+'%')}</tbody></table>
 <img src="${img('emptyChart')}" alt="Emptiness along each route">${noteP(notes.traffic)}
 <h2>Tree cover</h2><table>${head}<tbody>${row('Average tree cover',a.avgCanopy+'%',b.avgCanopy+'%')}</tbody></table>
 <img src="${img('canopyChart')}" alt="Tree cover along each route">${noteP(notes.canopy)}
