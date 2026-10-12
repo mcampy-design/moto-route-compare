@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#fbfbfc" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#171a20" media="(prefers-color-scheme: dark)">
+<title>Timeline to GPX</title>
+<script>try{const t=localStorage.getItem('theme');if(t==='light'||t==='dark')document.documentElement.dataset.theme=t}catch(e){}</script>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<style>
+@font-face{font-family:'Geist';src:url('fonts/Geist-Variable.woff2') format('woff2');font-weight:100 900;font-display:swap}
+@font-face{font-family:'Geist Mono';src:url('fonts/GeistMono-Variable.woff2') format('woff2');font-weight:100 900;font-display:swap}
+:root{
+  --bg:#f3f4f6; --surface:#fbfbfc; --line:#dcdfe5; --ctl:#858b97; --text:#15171c; --muted:#555b69;
+  --a:#c8281e; --b:#2f5a8a; --err:#931a2e; --grid:#e3e6eb;
+  --btn-bg:#15171c; --btn-fg:#f3f4f6; color-scheme:light;
+  --r:8px; --ease:cubic-bezier(.16,1,.3,1);
+  --sans:'Geist',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif;
+  --mono:'Geist Mono',ui-monospace,'SF Mono',Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#111317; --surface:#171a20; --line:#2b303b; --ctl:#636a79; --text:#e9ebf0; --muted:#a0a7b6;
+  --a:#ff7a6e; --b:#8fb4e0; --err:#ff8fa3; --grid:#232833;
+  --btn-bg:#e9ebf0; --btn-fg:#111317; color-scheme:dark;
+}}
+:root[data-theme="dark"]{
+  --bg:#111317; --surface:#171a20; --line:#2b303b; --ctl:#636a79; --text:#e9ebf0; --muted:#a0a7b6;
+  --a:#ff7a6e; --b:#8fb4e0; --err:#ff8fa3; --grid:#232833;
+  --btn-bg:#e9ebf0; --btn-fg:#111317; color-scheme:dark;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+[hidden]{display:none!important}
+html{-webkit-text-size-adjust:100%}
+body{font-family:var(--sans);background:var(--bg);color:var(--text);line-height:1.55;-webkit-font-smoothing:antialiased;
+  padding:env(safe-area-inset-top,0) env(safe-area-inset-right,0) env(safe-area-inset-bottom,0) env(safe-area-inset-left,0)}
+.wrap{max-width:760px;margin:0 auto;padding:0 20px}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+button,input,select{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--text);outline-offset:2px}
+
+.bar{background:var(--surface);border-bottom:1px solid var(--line)}
+.bar .wrap{max-width:1120px;height:60px;display:flex;align-items:center;justify-content:space-between;gap:16px}
+.logo{display:flex;align-items:center;gap:10px;font-weight:650;font-size:1.05rem;letter-spacing:-0.025em;white-space:nowrap;color:inherit;text-decoration:none}
+.logo svg{width:28px;height:28px;flex:none}
+.logo .ra{stroke:var(--a)}.logo .rb{stroke:var(--b)}
+.bar-right{display:flex;align-items:center;gap:18px}
+.theme{display:flex;align-items:center;gap:10px;min-height:44px;padding:0 2px;border:0;background:none;font-size:.88rem;font-weight:550;color:var(--muted);cursor:pointer}
+.theme{white-space:nowrap}
+@media(max-width:400px){.theme .lbl{display:none}}
+.theme .track{width:40px;height:24px;border-radius:12px;border:1px solid var(--ctl);background:var(--bg);position:relative;flex:none}
+.theme .knob{position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:var(--ctl);transition:transform .2s var(--ease),background-color .2s var(--ease)}
+.theme[aria-checked="true"] .track{background:var(--btn-bg);border-color:var(--btn-bg)}
+.theme[aria-checked="true"] .knob{transform:translateX(16px);background:var(--btn-fg)}
+@media (prefers-reduced-motion:reduce){.theme .knob{transition:none}}
+
+header{padding:32px 0 24px}
+h1{font-size:clamp(2rem,4.2vw,3rem);font-weight:650;letter-spacing:-0.035em;line-height:1.05}
+.lede{margin-top:12px;color:var(--muted);max-width:56ch;font-size:1.02rem}
+main{display:grid;gap:16px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:20px;display:grid;gap:16px;min-width:0}
+.card h2{font-size:1rem;font-weight:600}
+.drop{border:1.5px dashed var(--ctl);border-radius:var(--r);padding:18px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;transition:border-color .2s var(--ease)}
+.drop.over{border-color:var(--text)}
+.drop.has{border-style:solid;border-color:var(--a)}
+.drop .status{flex:1 1 12rem;min-width:0}
+.drop p{color:var(--muted);font-size:.9rem}
+.drop .loaded{color:var(--text);font-weight:550;overflow-wrap:anywhere}
+.help{font-size:.85rem;color:var(--muted)}
+.error{font-size:.88rem;color:var(--err)}
+.error:empty{display:none}
+.row2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+@media(max-width:560px){.row2{grid-template-columns:minmax(0,1fr)}}
+.field{display:grid;gap:6px;min-width:0}
+.field label{font-size:.85rem;font-weight:550}
+.field select{background:var(--bg);border:1px solid var(--ctl);border-radius:var(--r);padding:9px 12px;font-size:.9rem;width:100%;min-width:0}
+.btn{border:1px solid var(--ctl);background:var(--surface);border-radius:var(--r);padding:9px 14px;font-size:.88rem;font-weight:550;cursor:pointer;white-space:nowrap;transition:transform .12s var(--ease),border-color .2s var(--ease)}
+@media(hover:hover){.btn:hover{border-color:var(--text)}}
+.btn:active{transform:scale(.98)}
+.btn.primary{background:var(--btn-bg);color:var(--btn-fg);border-color:var(--btn-bg)}
+.btn:disabled{opacity:.55;cursor:default;transform:none}
+.actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.progress{height:4px;border-radius:2px;background:var(--grid);overflow:hidden}
+.progress i{display:block;height:100%;width:0;background:var(--text);transition:width .3s var(--ease)}
+.stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.stat .v{font-family:var(--mono);font-size:1.6rem;font-weight:500;letter-spacing:-0.03em;line-height:1.1}
+.stat .k{font-size:.82rem;color:var(--muted)}
+.map{width:100%;aspect-ratio:var(--ar,1.4);max-height:560px;display:block;border:1px solid var(--line);border-radius:var(--r);background:var(--bg)}
+.map path{vector-effect:non-scaling-stroke}
+.map .raw{stroke:var(--ctl);fill:none;stroke-width:1.2;stroke-dasharray:3 3}
+.map .snap{stroke:var(--a);fill:none;stroke-width:2.2;stroke-linejoin:round;stroke-linecap:round}
+.map .pt{fill:var(--text)}
+.legend{display:flex;gap:16px;flex-wrap:wrap;font-size:.82rem;color:var(--muted)}
+.legend i{display:inline-block;width:20px;height:0;border-top:2px solid var(--a);vertical-align:middle;margin-right:6px}
+.legend i.r{border-top:2px dashed var(--ctl)}
+ol{padding-left:1.2em;display:grid;gap:6px;font-size:.92rem}
+footer{padding:24px 0 48px;color:var(--muted);font-size:.82rem;max-width:70ch}
+a{color:inherit}
+@media(max-width:480px){.wrap{padding:0 16px}.card{padding:16px}header{padding:20px 0 16px}.stat .v{font-size:1.3rem}}
+button,.drop{touch-action:manipulation}
+@media(pointer:coarse){.btn{min-height:44px;padding:10px 16px}.field select{font-size:16px;min-height:44px}.drop{cursor:pointer}}
+</style>
+</head>
+<body>
+<div class="bar"><div class="wrap">
+  <a class="logo" href="./"><svg viewBox="98 98 316 316" aria-hidden="true"><path class="ra" d="M128 384 C128 300 212 332 206 262 S272 238 262 186 S322 128 384 128" fill="none" stroke-width="30" stroke-linecap="round" stroke-linejoin="round"/><path class="rb" d="M128 384 C250 384 370 330 384 128" fill="none" stroke-width="30" stroke-linecap="round"/><circle cx="128" cy="384" r="30" fill="currentColor"/><circle cx="384" cy="128" r="30" fill="currentColor"/></svg>Route Compare</a>
+  <div class="bar-right">
+    <button class="theme" type="button" role="switch" id="themeBtn" aria-checked="false" aria-label="Dark mode"><span class="lbl">Dark mode</span><span class="track" aria-hidden="true"><span class="knob"></span></span></button>
+  </div>
+</div></div>
+<div class="wrap">
+<header>
+  <h1>Timeline to GPX</h1>
+  <p class="lede">Turn a day of rides from your Google Maps Timeline into a GPX file that follows the roads you rode. Then compare it on <a href="./">Route Compare</a> or load it into any route app.</p>
+</header>
+
+<main>
+  <section class="card" aria-label="Timeline file">
+    <h2>1. Add your Timeline export</h2>
+    <div class="drop" id="drop">
+      <div class="status" id="status"><p>Drop your Timeline .json file here</p></div>
+      <button class="btn" type="button" id="pick">Choose file</button>
+      <input type="file" id="file" accept=".json,application/json" hidden>
+    </div>
+    <p class="error" id="loadErr" role="alert"></p>
+    <details>
+      <summary class="help">How to export Timeline from Google Maps</summary>
+      <ol style="margin-top:8px">
+        <li>In the Google Maps app, tap your profile picture, then <b>Your Timeline</b>.</li>
+        <li>Tap the three dots (or the gear), then <b>Timeline settings</b>.</li>
+        <li>Scroll down to <b>Export Timeline data</b> and save the .json file.</li>
+        <li>Come back here and choose that file. It holds your whole history, so one export covers every ride until you export again.</li>
+      </ol>
+    </details>
+  </section>
+
+  <section class="card" id="pickCard" aria-label="Choose a day" hidden>
+    <h2>2. Pick a day</h2>
+    <div class="row2">
+      <div class="field"><label for="mode">Include</label><select id="mode"></select></div>
+      <div class="field"><label for="day">Day</label><select id="day"></select></div>
+    </div>
+    <p class="help" id="dayInfo"></p>
+    <div class="actions">
+      <button class="btn primary" type="button" id="build">Build GPX</button>
+    </div>
+    <div class="progress" id="prog" hidden><i></i></div>
+    <p class="help" id="progText" hidden></p>
+    <p class="error" id="buildErr" role="alert"></p>
+  </section>
+
+  <section class="card" id="out" aria-label="Result" hidden>
+    <h2>3. Your route</h2>
+    <svg class="map" id="map" role="img" aria-label="Map of the route, with the logged points and the snapped road line"></svg>
+    <div class="legend"><span><i></i>Snapped to roads</span><span><i class="r"></i>Logged points</span></div>
+    <div class="stats">
+      <div class="stat"><div class="v" id="sMiles">–</div><div class="k">miles</div></div>
+      <div class="stat"><div class="v" id="sLegs">–</div><div class="k">legs</div></div>
+      <div class="stat"><div class="v" id="sSnap">–</div><div class="k">legs snapped</div></div>
+    </div>
+    <p class="help" id="outNote"></p>
+    <div class="actions">
+      <button class="btn primary" type="button" id="dl">Download GPX</button>
+      <button class="btn" type="button" id="share" hidden>Share</button>
+      <button class="btn" type="button" id="dlRaw">Download unsnapped points</button>
+    </div>
+  </section>
+</main>
+
+<footer>Your Timeline file is read in your browser and never uploaded. When you build a GPX, that day's logged points (not the rest of your history) are sent to the free public OpenStreetMap routing service at router.project-osrm.org so they can be matched to roads. Timeline only logs a point every minute or so, so tight curves are approximated and a few sections may follow a parallel road. Sections that can't be matched confidently keep the original logged points.</footer>
+</div>
+<script src="timeline.js"></script>
+<script>
+const $=id=>document.getElementById(id);
+const touch=matchMedia('(pointer:coarse)').matches;
+let tl=null,fileName='',built=null;
+
+// ── Theme switch (same behaviour as the main page) ──
+const darkMQ=matchMedia('(prefers-color-scheme: dark)');
+function isDark(){const t=document.documentElement.dataset.theme;return t?t==='dark':darkMQ.matches}
+function syncTheme(){
+  $('themeBtn').setAttribute('aria-checked',String(isDark()));
+  const surface=getComputedStyle(document.documentElement).getPropertyValue('--surface').trim();
+  document.querySelectorAll('meta[name="theme-color"]').forEach(m=>m.content=surface);
+}
+$('themeBtn').addEventListener('click',()=>{
+  const next=isDark()?'light':'dark',root=document.documentElement;
+  if(next===(darkMQ.matches?'dark':'light')){delete root.dataset.theme;try{localStorage.removeItem('theme')}catch(e){}}
+  else{root.dataset.theme=next;try{localStorage.setItem('theme',next)}catch(e){}}
+  syncTheme();
+});
+darkMQ.addEventListener('change',syncTheme);
+syncTheme();
+
+// ── Loading the export ──
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+if(touch){$('file').removeAttribute('accept');$('status').innerHTML='<p>No file chosen</p>'}
+$('pick').addEventListener('click',()=>$('file').click());
+$('drop').addEventListener('click',e=>{if(touch&&!e.target.closest('button'))$('file').click()});
+['dragenter','dragover'].forEach(e=>$('drop').addEventListener(e,ev=>{ev.preventDefault();$('drop').classList.add('over')}));
+['dragleave','drop'].forEach(e=>$('drop').addEventListener(e,()=>$('drop').classList.remove('over')));
+$('drop').addEventListener('drop',ev=>{ev.preventDefault();if(ev.dataTransfer.files[0])load(ev.dataTransfer.files[0])});
+$('file').addEventListener('change',()=>{if($('file').files[0])load($('file').files[0]);$('file').value=''});
+
+async function load(file){
+  $('loadErr').textContent='';$('out').hidden=true;built=null;
+  $('status').innerHTML='<p>Reading '+esc(file.name)+'…</p>';
+  await new Promise(r=>setTimeout(r,30)); // let the message paint before the heavy parse
+  try{
+    tl=Timeline.parse(JSON.parse(await file.text()));
+    fileName=file.name;
+    $('drop').classList.add('has');
+    $('status').innerHTML='<p class="loaded">'+esc(file.name)+'</p><p>'+tl.points.length.toLocaleString()+' logged points, '+tl.acts.length.toLocaleString()+' trips</p>';
+    $('mode').innerHTML=Object.entries(Timeline.MODES).map(([k,m])=>'<option value="'+k+'">'+m.label+'</option>').join('');
+    // If there are no motorcycle days, start with all vehicle trips
+    if(!Timeline.listDays(tl,'moto').length)$('mode').value='vehicle';
+    fillDays();
+    $('pickCard').hidden=false;
+  }catch(err){
+    tl=null;$('pickCard').hidden=true;$('drop').classList.remove('has');
+    $('status').innerHTML='<p>Drop your Timeline .json file here</p>';
+    $('loadErr').textContent=err instanceof SyntaxError?"That file isn't valid JSON. Use the file Google Maps exported.":err.message;
+  }
+}
+
+function fillDays(){
+  const days=Timeline.listDays(tl,$('mode').value);
+  $('day').innerHTML=days.map(d=>{
+    const dt=new Date(d.day+'T12:00:00');
+    const label=dt.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric',year:'numeric'});
+    return '<option value="'+d.day+'">'+label+' · '+d.legs+(d.legs===1?' leg':' legs')+', '+(d.ms/3600000).toFixed(1)+' h</option>';
+  }).join('');
+  $('build').disabled=!days.length;
+  $('dayInfo').textContent=days.length?'':'No trips of that kind in this file. Try "Motorcycle and car trips".';
+  $('out').hidden=true;
+}
+$('mode').addEventListener('change',fillDays);
+$('day').addEventListener('change',()=>{$('out').hidden=true});
+
+// ── Building the GPX ──
+$('build').addEventListener('click',async()=>{
+  $('buildErr').textContent='';$('out').hidden=true;
+  const day=$('day').value,mode=$('mode').value;
+  const legs=Timeline.legsFor(tl,day,mode).filter(l=>l.raw.length>=2);
+  if(!legs.length){$('buildErr').textContent='That day has no logged points to work with.';return}
+  const totalPieces=legs.reduce((n,l)=>n+Math.ceil(Math.max(1,l.raw.length-1)/77),0);
+  let done=0;
+  $('build').disabled=true;$('prog').hidden=false;$('progText').hidden=false;
+  const setProg=()=>{$('prog').firstElementChild.style.width=Math.min(100,done/totalPieces*100)+'%';$('progText').textContent='Matching to roads… '+Math.min(done,totalPieces)+' of '+totalPieces};
+  setProg();
+  try{
+    const lines=[];let fallbacks=0,snappedLegs=0;
+    for(const leg of legs){
+      const r=await Timeline.snapLeg(leg.raw,{onProgress:()=>{done++;setProg()}});
+      lines.push({s:leg.s,e:leg.e,line:r.line,raw:leg.raw.map(p=>p.ll),fb:r.fallbacks,pieces:r.pieces});
+      fallbacks+=r.fallbacks;if(r.fallbacks===0)snappedLegs++;
+    }
+    const stops=Timeline.stopsFor(tl,legs);
+    built={day,lines,stops,fallbacks,snappedLegs,
+      gpx:Timeline.toGPX('Ride '+day,lines,stops),
+      rawGpx:Timeline.toGPX('Ride '+day+' (unsnapped)',lines.map(l=>({s:l.s,e:l.e,line:l.raw})),stops)};
+    show();
+  }catch(err){
+    $('buildErr').textContent=err.message||'Something went wrong while matching.';
+  }finally{
+    $('build').disabled=false;$('prog').hidden=true;$('progText').hidden=true;
+  }
+});
+
+function show(){
+  const b=built,all=b.lines.flatMap(l=>l.line);
+  const m=b.lines.reduce((s,l)=>s+Timeline.length(l.line),0);
+  $('sMiles').textContent=Timeline.miles(m).toFixed(0);
+  $('sLegs').textContent=b.lines.length;
+  $('sSnap').textContent=b.snappedLegs+'/'+b.lines.length;
+  const pieces=b.lines.reduce((n,l)=>n+l.pieces,0);
+  $('outNote').textContent=b.fallbacks
+    ?b.fallbacks+' of '+pieces+' sections could not be matched confidently and keep the original logged points. They show as the dashed line where it differs from the red one.'
+    :'Every section was matched to roads. Check the result against your memory of the ride before relying on it.';
+  drawMap(b.lines);
+  $('share').hidden=!(navigator.canShare&&navigator.canShare({files:[new File(['x'],'a.gpx',{type:'application/gpx+xml'})]}));
+  $('out').hidden=false;
+  $('out').scrollIntoView({behavior:matchMedia('(prefers-reduced-motion:reduce)').matches?'auto':'smooth',block:'start'});
+}
+
+// Plain outline of the route (no base map): shows how closely the snapped line follows the logged points
+function drawMap(lines){
+  const all=lines.flatMap(l=>l.line.concat(l.raw));
+  let la0=90,la1=-90,lo0=180,lo1=-180;
+  for(const p of all){la0=Math.min(la0,p[0]);la1=Math.max(la1,p[0]);lo0=Math.min(lo0,p[1]);lo1=Math.max(lo1,p[1])}
+  const k=Math.cos((la0+la1)/2*Math.PI/180),W=600,pad=18;
+  const spanX=Math.max(1e-6,(lo1-lo0)*k),spanY=Math.max(1e-6,la1-la0);
+  const sc=Math.min((W-2*pad)/spanX,(440-2*pad)/spanY);
+  const w=spanX*sc+2*pad,h=spanY*sc+2*pad;
+  const X=p=>(pad+(p[1]-lo0)*k*sc).toFixed(1),Y=p=>(pad+(la1-p[0])*sc).toFixed(1);
+  const path=pts=>'M'+pts.map(p=>X(p)+' '+Y(p)).join('L');
+  const svg=$('map');svg.setAttribute('viewBox','0 0 '+w.toFixed(0)+' '+h.toFixed(0));svg.style.setProperty('--ar',(w/h).toFixed(3));const dot=(Math.max(w,h)/110).toFixed(1);
+  const first=lines[0].line[0],last=lines[lines.length-1].line.slice(-1)[0];
+  svg.innerHTML=lines.map(l=>'<path class="raw" d="'+path(l.raw)+'"/>').join('')+
+    lines.map(l=>'<path class="snap" d="'+path(l.line)+'"/>').join('')+
+    '<circle class="pt" r="'+dot+'" cx="'+X(first)+'" cy="'+Y(first)+'"/><circle class="pt" r="'+dot+'" cx="'+X(last)+'" cy="'+Y(last)+'"/>';
+}
+
+// ── Saving ──
+function blobOf(text){return new Blob([text],{type:'application/gpx+xml'})}
+function save(text,name){
+  const a=document.createElement('a');a.href=URL.createObjectURL(blobOf(text));a.download=name;
+  document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+}
+$('dl').addEventListener('click',()=>save(built.gpx,'ride_'+built.day+'.gpx'));
+$('dlRaw').addEventListener('click',()=>save(built.rawGpx,'ride_'+built.day+'_unsnapped.gpx'));
+$('share').addEventListener('click',async()=>{
+  try{await navigator.share({files:[new File([built.gpx],'ride_'+built.day+'.gpx',{type:'application/gpx+xml'})]})}catch(e){}
+});
+if('serviceWorker' in navigator&&location.protocol!=='file:')navigator.serviceWorker.register('sw.js').catch(()=>{});
+</script>
+</body>
+</html>

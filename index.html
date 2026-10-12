@@ -66,7 +66,13 @@ button,input{font:inherit;color:inherit}
 .logo svg{width:28px;height:28px;flex:none}
 .logo .ra{stroke:var(--a)}.logo .rb{stroke:var(--b)}
 /* Light/dark switch: the whole label is the tap target */
+.bar-right{display:flex;align-items:center;gap:18px}
+.navlink{display:flex;align-items:center;min-height:44px;font-size:.88rem;font-weight:550;color:var(--muted);text-decoration:none;white-space:nowrap}
+@media(hover:hover){.navlink:hover{color:var(--text);text-decoration:underline}}
+@media(max-width:400px){.navlink .long{display:none}.bar-right{gap:12px}}
 .theme{display:flex;align-items:center;gap:10px;min-height:44px;padding:0 2px;border:0;background:none;font-size:.88rem;font-weight:550;color:var(--muted);cursor:pointer}
+.theme{white-space:nowrap}
+@media(max-width:400px){.theme .lbl{display:none}}
 .theme .track{width:40px;height:24px;border-radius:12px;border:1px solid var(--ctl);background:var(--bg);position:relative;flex:none;transition:background-color .2s var(--ease),border-color .2s var(--ease)}
 .theme .knob{position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:var(--ctl);transition:transform .2s var(--ease),background-color .2s var(--ease)}
 .theme[aria-checked="true"] .track{background:var(--btn-bg);border-color:var(--btn-bg)}
@@ -190,7 +196,10 @@ button,summary,.drop{touch-action:manipulation}
 <body>
 <div class="bar"><div class="wrap">
   <div class="logo"><svg viewBox="98 98 316 316" aria-hidden="true"><path class="ra" d="M128 384 C128 300 212 332 206 262 S272 238 262 186 S322 128 384 128" fill="none" stroke-width="30" stroke-linecap="round" stroke-linejoin="round"/><path class="rb" d="M128 384 C250 384 370 330 384 128" fill="none" stroke-width="30" stroke-linecap="round"/><circle cx="128" cy="384" r="30" fill="currentColor"/><circle cx="384" cy="128" r="30" fill="currentColor"/></svg>Route Compare</div>
-  <button class="theme" type="button" role="switch" id="themeBtn" aria-checked="false">Dark mode<span class="track" aria-hidden="true"><span class="knob"></span></span></button>
+  <div class="bar-right">
+    <a class="navlink" href="timeline.html">Timeline <span class="long">to GPX</span></a>
+    <button class="theme" type="button" role="switch" id="themeBtn" aria-checked="false" aria-label="Dark mode"><span class="lbl">Dark mode</span><span class="track" aria-hidden="true"><span class="knob"></span></span></button>
+  </div>
 </div></div>
 <div class="wrap">
 <header>
