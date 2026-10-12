@@ -185,7 +185,13 @@ const Timeline = (() => {
     const out = ['<?xml version="1.0" encoding="UTF-8"?>',
       '<gpx version="1.1" creator="Route Compare Timeline to GPX" xmlns="http://www.topografix.com/GPX/1/1">',
       '<metadata><name>' + esc(name) + '</name></metadata>'];
-    stops.forEach((v, i) => out.push('<wpt lat="' + v.ll[0] + '" lon="' + v.ll[1] + '"><time>' + iso(v.s) + '</time><name>Stop ' + (i + 1) + '</name></wpt>'));
+    if (stops.length && lines.length) { // Start and End bracket the stops so apps that read waypoints as route points keep the true ends
+      const f = lines[0].line[0], l = lines[lines.length - 1].line.slice(-1)[0];
+      out.push('<wpt lat="' + f[0] + '" lon="' + f[1] + '"><time>' + iso(lines[0].s) + '</time><name>Start</name></wpt>');
+      stops.forEach((v, i) => out.push('<wpt lat="' + v.ll[0] + '" lon="' + v.ll[1] + '"><time>' + iso(v.s) + '</time><name>Stop ' + (i + 1) + '</name></wpt>'));
+      out.push('<wpt lat="' + l[0] + '" lon="' + l[1] + '"><time>' + iso(lines[lines.length - 1].e) + '</time><name>End</name></wpt>');
+    }
+
     out.push('<trk><name>' + esc(name) + '</name>');
     for (const l of lines) {
       const total = length(l.line) || 1;
