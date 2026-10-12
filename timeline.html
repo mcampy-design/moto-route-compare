@@ -253,7 +253,7 @@ $('build').addEventListener('click',async()=>{
   const setProg=()=>{$('prog').firstElementChild.style.width=Math.min(100,done/totalPieces*100)+'%';$('progText').textContent='Matching to roads… '+Math.min(done,totalPieces)+' of '+totalPieces};
   setProg();
   try{
-    const lines=[];let fallbacks=0,snappedLegs=0;const totals={match:0,route:0,raw:0},reasons={};
+    const lines=[];let fallbacks=0,snappedLegs=0;const totals={match:0,route:0,raw:0,straight:0},reasons={};
     for(const leg of legs){
       const r=await Timeline.snapLeg(leg.raw,{onProgress:()=>{done++;setProg()}});
       lines.push({s:leg.s,e:leg.e,line:r.line,raw:leg.raw.map(p=>p.ll),fb:r.fallbacks,pieces:r.pieces});
@@ -282,6 +282,7 @@ function show(){
   if(t.match)parts.push(t.match+' matched to roads');
   if(t.route)parts.push(t.route+' routed along roads between the logged points');
   if(t.raw)parts.push(t.raw+' kept the original logged points');
+  if(t.straight)parts.push(t.straight+' gaps between logged points stayed straight because the road route was a long detour');
   $('outNote').textContent='Sections: '+parts.join(', ')+'.'+(why?' Why the first method failed: '+why+'.':'')+(t.raw?' Sections that kept logged points show as the dashed line where it differs from the red one.':' Check the result against your memory of the ride before relying on it.');
   drawMap(b.lines);
   $('share').hidden=!(navigator.canShare&&navigator.canShare({files:[new File(['x'],'a.gpx',{type:'application/gpx+xml'})]}));
