@@ -156,6 +156,26 @@ const Timeline = (() => {
     return { line, straight: legs.length - kept };
   }
 
+  // Route through a short list of [lat,lng] points, returning one road path per gap plus where each point landed on the road.
+  // Used by the map editor, where the person has chosen the points, so no detour check is applied.
+  async function routeVia(lls, opts) {
+    const fetchFn = (opts && opts.fetch) || fetch, base = (opts && opts.base) || OSRM_URL;
+    const j = await getJSON(base + '/route/v1/driving/' + coordStr(lls) +
+      '?geometries=geojson&overview=false&steps=true&continue_straight=false&radiuses=' + lls.map(() => 200).join(';'), fetchFn);
+    if (j.code !== 'Ok' || !j.routes || !j.routes[0] || j.routes[0].legs.length !== lls.length - 1) return null;
+    const segs = j.routes[0].legs.map(leg => {
+      const out = [];
+      for (const st of leg.steps || []) for (const c of st.geometry.coordinates) {
+        const p = [c[1], c[0]];
+        if (!out.length || out[out.length - 1][0] !== p[0] || out[out.length - 1][1] !== p[1]) out.push(p);
+      }
+      return out;
+    });
+    if (segs.some(sg => sg.length < 2)) return null;
+    const locs = (j.waypoints || []).map(w => [w.location[1], w.location[0]]);
+    return { segs, locs };
+  }
+
   function join(acc, next) { // glue two snapped pieces that share OVERLAP points
     if (!acc.length) return next.slice();
     const end = acc[acc.length - 1];
@@ -223,6 +243,6 @@ const Timeline = (() => {
     return out.join('\n');
   }
 
-  return { MODES, parse, listDays, legsFor, stopsFor, snapLeg, toGPX, dist, length, miles, latlng };
+  return { MODES, parse, listDays, legsFor, stopsFor, snapLeg, routeVia, toGPX, dist, length, miles, latlng };
 })();
 if (typeof module !== 'undefined') module.exports = Timeline;
