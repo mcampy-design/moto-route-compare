@@ -126,19 +126,34 @@ const Timeline = (() => {
     if (matched < ll.length * 0.8) return { reason: 'match: too few points matched' };
     const line = [];
     for (const m of j.matchings) for (const c of m.geometry.coordinates) line.push([c[1], c[0]]);
-    if (!sane(line, ll, 0.7, 1.8)) return { reason: 'match: detour' };
+    if (!sane(line, ll, 0.9, 1.3)) return { reason: 'match: detour' };
     return { line };
   }
 
-  // Routing through the logged points in order: works when points are miles apart.
+  // Routing through the logged points in order. Every gap between two logged points is judged on its own:
+  // if the road route is much longer than the gap, the router took a detour (usually a faster highway),
+  // so that gap keeps a straight segment instead of a wrong road.
+  const MAX_GAP_RATIO = 1.3, GAP_SLACK_M = 400;
   async function routeChunk(pts, fetchFn, base) {
     const ll = pts.map(p => p.ll);
     const j = await getJSON(base + '/route/v1/driving/' + coordStr(ll) +
-      '?geometries=geojson&overview=full&continue_straight=true&radiuses=' + radii(ll), fetchFn);
+      '?geometries=geojson&overview=false&steps=true&continue_straight=false&radiuses=' + radii(ll), fetchFn);
     if (j.code !== 'Ok' || !j.routes || !j.routes.length) return { reason: 'route: ' + (j.code || 'no result') };
-    const line = j.routes[0].geometry.coordinates.map(c => [c[1], c[0]]);
-    if (!sane(line, ll, 0.8, 1.6)) return { reason: 'route: detour' };
-    return { line };
+    const legs = j.routes[0].legs || [];
+    if (legs.length !== ll.length - 1) return { reason: 'route: unexpected answer' };
+    let line = [], kept = 0;
+    legs.forEach((leg, i) => {
+      const gap = dist(ll[i], ll[i + 1]);
+      let seg;
+      if (leg.distance <= Math.max(gap * MAX_GAP_RATIO, gap + GAP_SLACK_M)) {
+        seg = [];
+        for (const st of leg.steps || []) for (const c of st.geometry.coordinates) seg.push([c[1], c[0]]);
+      }
+      if (!seg || seg.length < 2) { seg = [ll[i], ll[i + 1]]; } else kept++;
+      line = line.length ? line.concat(seg) : seg;
+    });
+    if (kept < legs.length * 0.5) return { reason: 'route: ' + (legs.length - kept) + ' of ' + legs.length + ' gaps too indirect' };
+    return { line, straight: legs.length - kept };
   }
 
   function join(acc, next) { // glue two snapped pieces that share OVERLAP points
@@ -153,7 +168,7 @@ const Timeline = (() => {
   async function snapLeg(raw, opts) {
     const fetchFn = (opts && opts.fetch) || fetch, base = (opts && opts.base) || OSRM_URL;
     const onProgress = (opts && opts.onProgress) || (() => {});
-    const counts = { match: 0, route: 0, raw: 0 }, reasons = {};
+    const counts = { match: 0, route: 0, raw: 0, straight: 0 }, reasons = {};
     const why = r => { reasons[r] = (reasons[r] || 0) + 1; };
     let line = [], pieces = 0;
     for (let i = 0; i < raw.length - 1; i += CHUNK - OVERLAP) {
@@ -168,6 +183,7 @@ const Timeline = (() => {
         if (!r.line) { why(r.reason); r = { line: chunk.map(p => p.ll) }; how = 'raw'; }
       }
       counts[how]++;
+      if (r.straight) counts.straight += r.straight;
       line = join(line, r.line);
       onProgress();
       if (i + CHUNK >= raw.length) break;
