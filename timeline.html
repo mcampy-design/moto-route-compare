@@ -8,6 +8,7 @@
 <meta name="theme-color" content="#171a20" media="(prefers-color-scheme: dark)">
 <title>Timeline to GPX</title>
 <script>try{const t=localStorage.getItem('theme');if(t==='light'||t==='dark')document.documentElement.dataset.theme=t}catch(e){}</script>
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon-192.png" type="image/png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -102,6 +103,15 @@ a{color:inherit}
 @media(max-width:480px){.wrap{padding:0 16px}.card{padding:16px}header{padding:20px 0 16px}.stat .v{font-size:1.3rem}}
 button,.drop{touch-action:manipulation}
 @media(pointer:coarse){.btn{min-height:44px;padding:10px 16px}.field select{font-size:16px;min-height:44px}.drop{cursor:pointer}}
+
+/* Map editor */
+#editMap{width:100%;height:min(65vh,560px);min-height:340px;border:1px solid var(--line);border-radius:var(--r);background:var(--bg);z-index:0}
+.cp span{display:block;width:12px;height:12px;margin:8px;border-radius:50%;background:var(--surface);border:2px solid #15171c;box-shadow:0 0 0 1px #fff}
+.cp.end span{width:16px;height:16px;margin:6px;background:#15171c;border-color:#fff}
+.leaflet-container{font-family:var(--sans)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .leaflet-tile-pane{filter:invert(1) hue-rotate(180deg) brightness(.92) contrast(.9)}}
+:root[data-theme="dark"] .leaflet-tile-pane{filter:invert(1) hue-rotate(180deg) brightness(.92) contrast(.9)}
+.legend i.d{border-top:2px dashed var(--b)}
 </style>
 </head>
 <body>
@@ -167,13 +177,29 @@ button,.drop{touch-action:manipulation}
       <button class="btn primary" type="button" id="dl">Download GPX</button>
       <button class="btn" type="button" id="share" hidden>Share</button>
       <button class="btn" type="button" id="dlRaw">Download unsnapped points</button>
+      <button class="btn" type="button" id="edit">Fix on a map</button>
     </div>
+  </section>
+
+  <section class="card" id="editCard" aria-label="Fix the route" hidden>
+    <h2>4. Fix the route on a map</h2>
+    <p class="help">Drag a round point onto the road you actually rode. Tap the route to add a point there, and tap a point to remove it. Each change re-routes only the stretch next to it. The dashed blue stretches could not be snapped to a road.</p>
+    <div id="editMap" role="application" aria-label="Route editing map"></div>
+    <div class="legend"><span><i></i>Follows a road</span><span><i class="d"></i>Not snapped yet</span></div>
+    <p class="help" id="editStatus" aria-live="polite"></p>
+    <div class="actions">
+      <button class="btn" type="button" id="undo">Undo</button>
+      <button class="btn" type="button" id="resetEdit">Reset to built route</button>
+    </div>
+    <p class="help">The map loads pictures from OpenStreetMap, so it can see the area you look at. Your edits are included when you download the GPX above.</p>
   </section>
 </main>
 
 <footer>Your Timeline file is read in your browser and never uploaded. When you build a GPX, that day's logged points (not the rest of your history) are sent to the free public OpenStreetMap routing service at router.project-osrm.org so they can be matched to roads. Timeline only logs a point every minute or so, so tight curves are approximated and a few sections may follow a parallel road. Sections that can't be matched confidently keep the original logged points.</footer>
 </div>
+<script src="vendor/leaflet/leaflet.js"></script>
 <script src="timeline.js"></script>
+<script src="timeline-editor.js"></script>
 <script>
 const $=id=>document.getElementById(id);
 const touch=matchMedia('(pointer:coarse)').matches;
@@ -191,7 +217,7 @@ $('themeBtn').addEventListener('click',()=>{
   const next=isDark()?'light':'dark',root=document.documentElement;
   if(next===(darkMQ.matches?'dark':'light')){delete root.dataset.theme;try{localStorage.removeItem('theme')}catch(e){}}
   else{root.dataset.theme=next;try{localStorage.setItem('theme',next)}catch(e){}}
-  syncTheme();
+  syncTheme();if(typeof editor!=='undefined'&&editor)editor.refresh();
 });
 darkMQ.addEventListener('change',syncTheme);
 syncTheme();
@@ -207,7 +233,7 @@ $('drop').addEventListener('drop',ev=>{ev.preventDefault();if(ev.dataTransfer.fi
 $('file').addEventListener('change',()=>{if($('file').files[0])load($('file').files[0]);$('file').value=''});
 
 async function load(file){
-  $('loadErr').textContent='';$('out').hidden=true;built=null;
+  $('loadErr').textContent='';$('out').hidden=true;built=null;closeEditor();
   $('status').innerHTML='<p>Reading '+esc(file.name)+'…</p>';
   await new Promise(r=>setTimeout(r,30)); // let the message paint before the heavy parse
   try{
@@ -243,7 +269,7 @@ $('day').addEventListener('change',()=>{$('out').hidden=true});
 
 // ── Building the GPX ──
 $('build').addEventListener('click',async()=>{
-  $('buildErr').textContent='';$('out').hidden=true;
+  $('buildErr').textContent='';$('out').hidden=true;closeEditor();
   const day=$('day').value,mode=$('mode').value;
   const legs=Timeline.legsFor(tl,day,mode).filter(l=>l.raw.length>=2);
   if(!legs.length){$('buildErr').textContent='That day has no logged points to work with.';return}
@@ -253,7 +279,7 @@ $('build').addEventListener('click',async()=>{
   const setProg=()=>{$('prog').firstElementChild.style.width=Math.min(100,done/totalPieces*100)+'%';$('progText').textContent='Matching to roads… '+Math.min(done,totalPieces)+' of '+totalPieces};
   setProg();
   try{
-    const lines=[];let fallbacks=0,snappedLegs=0;const totals={match:0,route:0,raw:0},reasons={};
+    const lines=[];let fallbacks=0,snappedLegs=0;const totals={match:0,route:0,raw:0,straight:0},reasons={};
     for(const leg of legs){
       const r=await Timeline.snapLeg(leg.raw,{onProgress:()=>{done++;setProg()}});
       lines.push({s:leg.s,e:leg.e,line:r.line,raw:leg.raw.map(p=>p.ll),fb:r.fallbacks,pieces:r.pieces});
@@ -282,6 +308,7 @@ function show(){
   if(t.match)parts.push(t.match+' matched to roads');
   if(t.route)parts.push(t.route+' routed along roads between the logged points');
   if(t.raw)parts.push(t.raw+' kept the original logged points');
+  if(t.straight)parts.push(t.straight+' gaps between logged points stayed straight because the road route was a long detour');
   $('outNote').textContent='Sections: '+parts.join(', ')+'.'+(why?' Why the first method failed: '+why+'.':'')+(t.raw?' Sections that kept logged points show as the dashed line where it differs from the red one.':' Check the result against your memory of the ride before relying on it.');
   drawMap(b.lines);
   $('share').hidden=!(navigator.canShare&&navigator.canShare({files:[new File(['x'],'a.gpx',{type:'application/gpx+xml'})]}));
@@ -312,8 +339,11 @@ function blobOf(text){return new Blob([text],{type:'application/gpx+xml'})}
 // Built when saving so the markers checkbox applies without rebuilding
 function gpxText(snapped){
   const stops=$('withStops').checked?built.stops:[];
-  return snapped?Timeline.toGPX('Ride '+built.day,built.lines,stops)
-    :Timeline.toGPX('Ride '+built.day+' (unsnapped)',built.lines.map(l=>({s:l.s,e:l.e,line:l.raw})),stops);
+  if(snapped){
+    const L0=built.lines,lines=editor&&editor.isEdited()?[{s:L0[0].s,e:L0[L0.length-1].e,line:editor.getLine()}]:L0;
+    return Timeline.toGPX('Ride '+built.day,lines,stops);
+  }
+  return Timeline.toGPX('Ride '+built.day+' (unsnapped)',built.lines.map(l=>({s:l.s,e:l.e,line:l.raw})),stops);
 }
 function save(text,name){
   const a=document.createElement('a');a.href=URL.createObjectURL(blobOf(text));a.download=name;
@@ -324,6 +354,23 @@ $('dlRaw').addEventListener('click',()=>save(gpxText(false),'ride_'+built.day+'_
 $('share').addEventListener('click',async()=>{
   try{await navigator.share({files:[new File([gpxText(true)],'ride_'+built.day+'.gpx',{type:'application/gpx+xml'})]})}catch(e){}
 });
+
+// ── Map editor ──
+let editor=null;
+function closeEditor(){if(editor){try{editor.destroy()}catch(e){}editor=null}$('editCard').hidden=true}
+$('edit').addEventListener('click',()=>{
+  if(typeof L==='undefined'){$('buildErr').textContent='The map editor could not load. Check your connection and reload.';return}
+  $('editCard').hidden=false;
+  if(!editor){
+    editor=TimelineEditor.create({el:$('editMap'),built,
+      setStatus:t=>{$('editStatus').textContent=t},
+      onChange:()=>{if(editor)$('sMiles').textContent=Timeline.miles(Timeline.length(editor.getLine())).toFixed(0)}});
+  }
+  editor.invalidate();
+  $('editCard').scrollIntoView({behavior:matchMedia('(prefers-reduced-motion:reduce)').matches?'auto':'smooth',block:'start'});
+});
+$('undo').addEventListener('click',()=>editor&&editor.undo());
+$('resetEdit').addEventListener('click',()=>editor&&editor.reset());
 if('serviceWorker' in navigator&&location.protocol!=='file:')navigator.serviceWorker.register('sw.js').catch(()=>{});
 </script>
 </body>
