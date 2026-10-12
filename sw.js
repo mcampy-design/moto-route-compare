@@ -34,8 +34,9 @@ self.addEventListener('fetch', event => {
     return;
   }
   if (origin !== location.origin) return;
-  // Pages are cached under one key, so ?a=/?b= and share params don't pile up entries
-  const key = req.mode === 'navigate' ? new URL('./', location.href).href : req;
+  // Each page is cached under its own address without the query, so ?a=/?b= and share params
+  // don't pile up entries and one page is never served in place of another
+  const key = req.mode === 'navigate' ? (u => (u.search = u.hash = '', u.href))(new URL(req.url)) : req;
   event.respondWith((async () => {
     const cache = await caches.open(CACHE);
     try {
