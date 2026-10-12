@@ -100,24 +100,45 @@ const Timeline = (() => {
   }
 
   // ── Snapping ──
-  async function matchChunk(pts, fetchFn, base) {
-    const coords = pts.map(p => p.ll[1].toFixed(6) + ',' + p.ll[0].toFixed(6)).join(';');
-    const url = base + '/match/v1/driving/' + coords +
-      '?geometries=geojson&overview=full&gaps=ignore&tidy=true&radiuses=' + pts.map(() => RADIUS_M).join(';');
+  // Each helper returns { line } on success or { reason } when the service can't give a trustworthy answer.
+  const coordStr = pts => pts.map(p => p[1].toFixed(6) + ',' + p[0].toFixed(6)).join(';');
+  const radii = pts => pts.map(() => RADIUS_M).join(';');
+  async function getJSON(url, fetchFn) {
     for (let attempt = 0; attempt < 3; attempt++) {
       const res = await fetchFn(url);
       if (res.status === 429 || res.status >= 500) { await new Promise(r => setTimeout(r, 1500 * (attempt + 1))); continue; }
-      const j = await res.json();
-      if (j.code !== 'Ok' || !j.matchings || !j.matchings.length) return null;
-      const matched = (j.tracepoints || []).filter(Boolean).length;
-      if (matched < pts.length * 0.8) return null;
-      const line = [];
-      for (const m of j.matchings) for (const c of m.geometry.coordinates) line.push([c[1], c[0]]);
-      const ratio = length(line) / Math.max(1, length(pts.map(p => p.ll)));
-      if (ratio > 1.8 || ratio < 0.7) return null; // took a big detour or dropped part of the route
-      return line;
+      try { return await res.json(); } catch (e) { return { code: 'HTTP ' + res.status }; }
     }
     throw new Error('The map-matching service is busy or unreachable. Try again in a minute.');
+  }
+  const sane = (line, pts, lo, hi) => {
+    const ratio = length(line) / Math.max(1, length(pts));
+    return ratio >= lo && ratio <= hi;
+  };
+
+  // Map matching: best for closely spaced points. Gives up when points are far apart.
+  async function matchChunk(pts, fetchFn, base) {
+    const ll = pts.map(p => p.ll);
+    const j = await getJSON(base + '/match/v1/driving/' + coordStr(ll) +
+      '?geometries=geojson&overview=full&gaps=ignore&radiuses=' + radii(ll), fetchFn);
+    if (j.code !== 'Ok' || !j.matchings || !j.matchings.length) return { reason: 'match: ' + (j.code || 'no result') };
+    const matched = (j.tracepoints || []).filter(Boolean).length;
+    if (matched < ll.length * 0.8) return { reason: 'match: too few points matched' };
+    const line = [];
+    for (const m of j.matchings) for (const c of m.geometry.coordinates) line.push([c[1], c[0]]);
+    if (!sane(line, ll, 0.7, 1.8)) return { reason: 'match: detour' };
+    return { line };
+  }
+
+  // Routing through the logged points in order: works when points are miles apart.
+  async function routeChunk(pts, fetchFn, base) {
+    const ll = pts.map(p => p.ll);
+    const j = await getJSON(base + '/route/v1/driving/' + coordStr(ll) +
+      '?geometries=geojson&overview=full&continue_straight=true&radiuses=' + radii(ll), fetchFn);
+    if (j.code !== 'Ok' || !j.routes || !j.routes.length) return { reason: 'route: ' + (j.code || 'no result') };
+    const line = j.routes[0].geometry.coordinates.map(c => [c[1], c[0]]);
+    if (!sane(line, ll, 0.8, 1.6)) return { reason: 'route: detour' };
+    return { line };
   }
 
   function join(acc, next) { // glue two snapped pieces that share OVERLAP points
@@ -128,23 +149,31 @@ const Timeline = (() => {
     return acc.concat(next.slice(bd < 300 ? best + 1 : 0));
   }
 
-  // Returns { line: [[lat,lng]...], pieces, fallbacks }
+  // Returns { line, pieces, fallbacks (kept raw), counts: {match, route, raw}, reasons: {text: n} }
   async function snapLeg(raw, opts) {
     const fetchFn = (opts && opts.fetch) || fetch, base = (opts && opts.base) || OSRM_URL;
     const onProgress = (opts && opts.onProgress) || (() => {});
-    let line = [], pieces = 0, fallbacks = 0;
+    const counts = { match: 0, route: 0, raw: 0 }, reasons = {};
+    const why = r => { reasons[r] = (reasons[r] || 0) + 1; };
+    let line = [], pieces = 0;
     for (let i = 0; i < raw.length - 1; i += CHUNK - OVERLAP) {
       const chunk = raw.slice(i, i + CHUNK);
       if (chunk.length < 2) break;
-      let piece = await matchChunk(chunk, fetchFn, base);
       pieces++;
-      if (!piece) { piece = chunk.map(p => p.ll); fallbacks++; }
-      line = join(line, piece);
+      let r = await matchChunk(chunk, fetchFn, base), how = 'match';
+      if (!r.line) {
+        why(r.reason);
+        await new Promise(res => setTimeout(res, 250));
+        r = await routeChunk(chunk, fetchFn, base); how = 'route';
+        if (!r.line) { why(r.reason); r = { line: chunk.map(p => p.ll) }; how = 'raw'; }
+      }
+      counts[how]++;
+      line = join(line, r.line);
       onProgress();
       if (i + CHUNK >= raw.length) break;
-      await new Promise(r => setTimeout(r, 250)); // be polite to the free public server
+      await new Promise(res => setTimeout(res, 250)); // be polite to the free public server
     }
-    return { line, pieces, fallbacks };
+    return { line, pieces, fallbacks: counts.raw, counts, reasons };
   }
 
   // ── GPX ──

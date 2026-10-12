@@ -252,14 +252,16 @@ $('build').addEventListener('click',async()=>{
   const setProg=()=>{$('prog').firstElementChild.style.width=Math.min(100,done/totalPieces*100)+'%';$('progText').textContent='Matching to roads… '+Math.min(done,totalPieces)+' of '+totalPieces};
   setProg();
   try{
-    const lines=[];let fallbacks=0,snappedLegs=0;
+    const lines=[];let fallbacks=0,snappedLegs=0;const totals={match:0,route:0,raw:0},reasons={};
     for(const leg of legs){
       const r=await Timeline.snapLeg(leg.raw,{onProgress:()=>{done++;setProg()}});
       lines.push({s:leg.s,e:leg.e,line:r.line,raw:leg.raw.map(p=>p.ll),fb:r.fallbacks,pieces:r.pieces});
       fallbacks+=r.fallbacks;if(r.fallbacks===0)snappedLegs++;
+      for(const k in r.counts)totals[k]+=r.counts[k];
+      for(const k in r.reasons)reasons[k]=(reasons[k]||0)+r.reasons[k];
     }
     const stops=Timeline.stopsFor(tl,legs);
-    built={day,lines,stops,fallbacks,snappedLegs,
+    built={day,lines,stops,fallbacks,snappedLegs,totals,reasons,
       gpx:Timeline.toGPX('Ride '+day,lines,stops),
       rawGpx:Timeline.toGPX('Ride '+day+' (unsnapped)',lines.map(l=>({s:l.s,e:l.e,line:l.raw})),stops)};
     show();
@@ -276,10 +278,12 @@ function show(){
   $('sMiles').textContent=Timeline.miles(m).toFixed(0);
   $('sLegs').textContent=b.lines.length;
   $('sSnap').textContent=b.snappedLegs+'/'+b.lines.length;
-  const pieces=b.lines.reduce((n,l)=>n+l.pieces,0);
-  $('outNote').textContent=b.fallbacks
-    ?b.fallbacks+' of '+pieces+' sections could not be matched confidently and keep the original logged points. They show as the dashed line where it differs from the red one.'
-    :'Every section was matched to roads. Check the result against your memory of the ride before relying on it.';
+  const t=b.totals,why=Object.entries(b.reasons).map(([k,n])=>k+' ×'+n).join(', ');
+  const parts=[];
+  if(t.match)parts.push(t.match+' matched to roads');
+  if(t.route)parts.push(t.route+' routed along roads between the logged points');
+  if(t.raw)parts.push(t.raw+' kept the original logged points');
+  $('outNote').textContent='Sections: '+parts.join(', ')+'.'+(why?' Why the first method failed: '+why+'.':'')+(t.raw?' Sections that kept logged points show as the dashed line where it differs from the red one.':' Check the result against your memory of the ride before relying on it.');
   drawMap(b.lines);
   $('share').hidden=!(navigator.canShare&&navigator.canShare({files:[new File(['x'],'a.gpx',{type:'application/gpx+xml'})]}));
   $('out').hidden=false;
